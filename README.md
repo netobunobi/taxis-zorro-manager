@@ -86,5 +86,5 @@ Este proyecto es privado y propietario para uso exclusivo de **Taxis El Zorro**.
 
 ---
 <div align="center">
-    <sub>Desarrollado con ❤️ y Python por netobunobi</sub>
+    <sub>Desarrollado con dedicación y Python por Ernesto Velez Ortega</sub>
 </div>
