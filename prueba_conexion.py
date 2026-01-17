@@ -1,21 +1,22 @@
-from gestor_bd import GestorBaseDatos
+import sqlite3
 
-# 1. Iniciamos el gestor
-gestor = GestorBaseDatos()
+def ver_columnas_reales():
+    conexion = sqlite3.connect("taxis.db")
+    cursor = conexion.cursor()
+    
+    # Le preguntamos a la base de datos: "¿Qué columnas tiene la tabla viajes?"
+    cursor.execute("PRAGMA table_info(viajes)")
+    columnas = cursor.fetchall()
+    
+    print("--- LA VERDAD SOBRE LA TABLA 'VIAJES' ---")
+    if not columnas:
+        print("❌ La tabla no existe.")
+    else:
+        for col in columnas:
+            # col[1] es el nombre de la columna
+            print(f"✅ Columna encontrada: {col[1]}")
 
-# 2. Pedimos los taxis
-print("--- PROBANDO CONSULTA DE TAXIS ---")
-lista_taxis = gestor.obtener_taxis_activos()
+    conexion.close()
 
-if lista_taxis:
-    for taxi in lista_taxis:
-        print(f"Taxi ID: {taxi['id']} | Unidad: {taxi['numero_economico']} | Estado: {taxi['estado_texto']}")
-else:
-    print("No hay taxis activos (¿Ya corriste crear_bd.py?)")
-
-# 3. Pedimos las bases
-print("\n--- PROBANDO CONSULTA DE BASES ---")
-lista_bases = gestor.obtener_bases()
-
-for base in lista_bases:
-    print(f"Base ID: {base['id']} | Nombre: {base['nombre_base']}")
+if __name__ == "__main__":
+    ver_columnas_reales()

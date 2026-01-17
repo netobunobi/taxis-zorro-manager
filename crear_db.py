@@ -15,12 +15,6 @@ def crear_base_datos():
     # ==========================================
 
     # --- Catálogos ---
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS cat_estados (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        descripcion TEXT UNIQUE NOT NULL
-    );
-    """)
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS cat_tipos_servicio (
@@ -29,6 +23,7 @@ def crear_base_datos():
     );
     """)
 
+    # NOTA: Aquí están TODAS las ubicaciones (Reales y Virtuales)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS cat_bases (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,15 +32,19 @@ def crear_base_datos():
     """)
 
     # --- Tablas Principales ---
+    # CAMBIO IMPORTANTE: Eliminé 'estado_actual_id'. 
+    # Ahora solo usamos 'base_actual_id' para saber dónde está (Cessa, Taller, Viaje, etc.)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS taxis (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         numero_economico TEXT NOT NULL,
-        estado_sistema TEXT DEFAULT 'ACTIVO',
+        estado_sistema TEXT DEFAULT 'ACTIVO', -- Para bajas lógicas (borrado suave)
         fecha_alta TEXT,
         fecha_baja TEXT,
-        estado_actual_id INTEGER DEFAULT 1, 
-        FOREIGN KEY(estado_actual_id) REFERENCES cat_estados(id)
+        
+        base_actual_id INTEGER DEFAULT 12, -- Por defecto nace en 'Fuera de Servicio' (ID 12)
+        
+        FOREIGN KEY(base_actual_id) REFERENCES cat_bases(id)
     );
     """)
 
@@ -76,22 +75,12 @@ def crear_base_datos():
     """)
 
     # ==========================================
-    # 2. CARGA DE DATOS REALES (SEGÚN IMÁGENES)
+    # 2. CARGA DE DATOS 
     # ==========================================
     
-    print("Cargando catálogos del sitio...")
+    print("Cargando catálogos...")
 
-    # A. ESTADOS (Estos son fijos para tu lógica interna)
-    datos_estados = [
-        (1, 'Fuera de Servicio'), 
-        (2, 'En Base'), 
-        (3, 'En Viaje'), 
-        (4, 'Taller') # Opcional si lo usas
-    ]
-    cursor.executemany("INSERT OR IGNORE INTO cat_estados (id, descripcion) VALUES (?, ?)", datos_estados)
-
-    # B. TIPOS DE SERVICIO (Datos de la imagen de salida)
-    # Nota: Respeté el orden numérico de tu imagen.
+    # A. TIPOS DE SERVICIO
     datos_servicios = [
         (1, 'Viaje en base'), 
         (2, 'Telefono base'), 
@@ -100,9 +89,9 @@ def crear_base_datos():
     ]
     cursor.executemany("INSERT OR IGNORE INTO cat_tipos_servicio (id, descripcion) VALUES (?, ?)", datos_servicios)
 
-    # C. BASES (Datos de la lista de bases)
-    # He corregido mayúsculas para que se vea profesional (ej: "cessa" -> "Cessa")
+    # B. BASES UNIFICADAS (Lugares físicos + Estados virtuales)
     datos_bases = [
+        # --- Bases Físicas ---
         (1, 'Cessa'), 
         (2, 'Licuor'), 
         (3, 'Santiagito'),
@@ -113,7 +102,12 @@ def crear_base_datos():
         (8, 'Capulin'),
         (9, 'Zocalo'),
         (10, '16 de septiembre'),
-        (11, 'Parada principal')
+        (11, 'Parada principal'),
+        
+        # --- Ubicaciones Virtuales ---
+        (12, 'Fuera de Servicio'),
+        (13, 'En Viaje'),
+        (14, 'Taller')
     ]
     cursor.executemany("INSERT OR IGNORE INTO cat_bases (id, nombre_base) VALUES (?, ?)", datos_bases)
 
@@ -121,20 +115,20 @@ def crear_base_datos():
     # 3. UNIDAD DE PRUEBA
     # ==========================================
 
-    # Creamos la Unidad 80 (Si no existe ya)
+    # Creamos la Unidad 80
     cursor.execute("SELECT count(*) FROM taxis WHERE numero_economico = '80'")
     if cursor.fetchone()[0] == 0:
         print("Creando unidad de prueba: 80...")
-        # Nace "Fuera de Servicio" (ID 1) y "ACTIVO"
+        # Nace con base_actual_id = 12 (Fuera de Servicio)
         cursor.execute("""
-            INSERT INTO taxis (numero_economico, estado_sistema, estado_actual_id) 
-            VALUES ('80', 'ACTIVO', 1)
+            INSERT INTO taxis (numero_economico, estado_sistema, base_actual_id) 
+            VALUES ('80', 'ACTIVO', 12)
         """)
 
     conexion.commit()
     conexion.close()
     
-    print("¡Base de datos actualizada con la información de las imágenes!")
+    print("¡Base de datos actualizada correctamente con lógica unificada!")
 
 if __name__ == "__main__":
     crear_base_datos()
