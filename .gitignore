@@ -208,11 +208,26 @@ __marimo__/
 
 
 # --- AGREGADO MANUALMENTE ---
-# Seguridad para bases de datos (CRUCIAL)
+
+# 1. Base de datos (CRUCIAL: Datos sensibles y binarios)
 *.db
 *.sqlite3
 taxis.db
 
-# Archivos de entorno virtual (por si acaso)
+# 2. Archivos Generados (Reportes PDF)
+*.pdf
+# Si alguna vez creas Excels o CSVs, agrégalos también:
+*.csv
+*.xlsx
+
+# 3. Logs y errores (Archivos de texto que se crean al fallar)
+*.log
+
+# 4. Carpetas de Entorno Virtual
 venv/
 env/
+.env
+
+# 5. Archivos de Sistema Operativo (Basura que crea Windows/Mac)
+Thumbs.db
+.DS_Store
