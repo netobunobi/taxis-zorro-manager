@@ -629,7 +629,7 @@ class VentanaPrincipal(QMainWindow):
         lbl_filtro.setStyleSheet("color: #94A3B8; font-weight: bold;")
         
         self.cmb_filtro_historial = QComboBox()
-        self.cmb_filtro_historial.addItems(["HOY", "MES", "ANIO", "SIEMPRE"])
+        self.cmb_filtro_historial.addItems(["HOY", "MES", "AÑO", "SIEMPRE"])
         self.cmb_filtro_historial.setFixedWidth(120)
         self.cmb_filtro_historial.setStyleSheet("""
             QComboBox { background-color: #0F172A; color: white; padding: 5px; border: 1px solid #475569; border-radius: 4px; }
@@ -1040,7 +1040,7 @@ class VentanaPrincipal(QMainWindow):
 
         # 2. Combo de Periodo (Lo mantenemos para saber si quieres EL DIA, EL MES o EL AÑO de la fecha seleccionada)
         self.cmb_periodo_stats = QComboBox()
-        self.cmb_periodo_stats.addItems(["DIA", "MES", "ANIO"]) # Cambié HOY por DIA para ser más claro
+        self.cmb_periodo_stats.addItems(["DIA", "MES", "AÑO"]) # Cambié HOY por DIA para ser más claro
         self.cmb_periodo_stats.setFixedWidth(80)
         self.cmb_periodo_stats.setStyleSheet("background-color: #1E293B; color: white; padding: 5px;")
         self.cmb_periodo_stats.currentIndexChanged.connect(self.buscar_stats_por_input)
@@ -1244,7 +1244,7 @@ class VentanaPrincipal(QMainWindow):
             self.lbl_stat_horas.setText(f"{stats['horas']:.1f} h")
             
             # 2. Gráficas Detalladas (Ahora pasamos fecha_ref)
-            if periodo == "SIEMPRE": periodo = "ANIO" 
+            if periodo == "SIEMPRE": periodo = "AÑO" 
             datos = self.db.obtener_datos_tres_graficas(taxi_id, periodo, fecha_ref=fecha_str)
             
             self.grafico_dinero.actualizar_grafico(datos["etiquetas"], datos["dinero"], "dinero")
@@ -1393,7 +1393,7 @@ class VentanaPrincipal(QMainWindow):
         lbl_stats.setStyleSheet("color: #00D1FF; font-size: 18px; font-weight: bold;")
         
         self.cmb_periodo_bases = QComboBox()
-        self.cmb_periodo_bases.addItems(["SIEMPRE", "HOY", "MES", "ANIO"]) # Default SIEMPRE
+        self.cmb_periodo_bases.addItems(["SIEMPRE", "HOY", "MES", "AÑO"]) # Default SIEMPRE
         self.cmb_periodo_bases.setFixedWidth(120)
         self.cmb_periodo_bases.setStyleSheet("background-color: #1E293B; color: white; padding: 5px;")
         # Al cambiar filtro, recargamos solo la gráfica (o todo)
@@ -1550,7 +1550,7 @@ class VentanaPrincipal(QMainWindow):
             texto_fecha = f"Reporte del Día: {dia} de {mes} de {anio}"
         elif periodo == "MES":
             texto_fecha = f"Reporte Mensual: {mes} {anio}"
-        elif periodo == "ANIO":
+        elif periodo == "AÑO":
             texto_fecha = f"Reporte Anual: {anio}"
 
         # 4. Generar PDF
@@ -1574,7 +1574,7 @@ class VentanaPrincipal(QMainWindow):
             # Truco: Si quisieras elegir febrero 2024, en el calendario seleccionas 
             # CUALQUIER dia de febrero 2024, y el sistema entiende que es todo el mes.
             
-        elif periodo == "ANIO":
+        elif periodo == "AÑO":
             # Muestra solo año: 2026
             self.date_selector.setDisplayFormat("yyyy")
 
@@ -1583,10 +1583,10 @@ class VentanaPrincipal(QMainWindow):
 
 
     def construir_pagina_reportes_globales(self, widget_padre):
-        from PyQt6.QtCore import QDate # Asegúrate de tener esto importado arriba
+        from PyQt6.QtCore import QDate 
 
         layout = QVBoxLayout(widget_padre)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter) # Centrado bonito
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter) 
 
         # TARJETA CENTRAL
         frame_central = QFrame()
@@ -1603,7 +1603,7 @@ class VentanaPrincipal(QMainWindow):
         lay_frame.setContentsMargins(40,40,40,40)
 
         # Icono o Título
-        lbl_titulo = QLabel("GENERADOR DE REPORTES\nCORPORATIVOS")
+        lbl_titulo = QLabel("GENERADOR DE REPORTES")
         lbl_titulo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl_titulo.setStyleSheet("color: #FACC15; font-size: 24px; font-weight: bold; border: none;")
 
@@ -1620,9 +1620,10 @@ class VentanaPrincipal(QMainWindow):
         self.date_global.setStyleSheet("background-color: #0F172A; color: white; padding: 10px; border-radius: 5px; font-size: 14px;")
 
         self.cmb_periodo_global = QComboBox()
-        self.cmb_periodo_global.addItems(["DIA", "MES", "ANIO"])
+        # === AQUI AGREGAMOS 'SIEMPRE' ===
+        self.cmb_periodo_global.addItems(["DIA", "MES", "AÑO", "SIEMPRE"]) 
         self.cmb_periodo_global.setStyleSheet("background-color: #0F172A; color: white; padding: 10px; border-radius: 5px; font-size: 14px;")
-        # Truco visual del formato (reusamos la lógica que hicimos antes)
+        
         self.cmb_periodo_global.currentIndexChanged.connect(self.actualizar_formato_global)
 
         hbox_ctrl.addWidget(self.date_global)
@@ -1652,16 +1653,24 @@ class VentanaPrincipal(QMainWindow):
         lay_frame.addWidget(btn_generar)
 
         layout.addWidget(frame_central)
-
-        # Inicializar formato
         self.actualizar_formato_global()
 
     def actualizar_formato_global(self):
-        """ Copia de la lógica de formato para este calendario independiente """
+        """ Cambia el aspecto del calendario """
         periodo = self.cmb_periodo_global.currentText()
-        if periodo == "DIA": self.date_global.setDisplayFormat("dd/MM/yyyy")
-        elif periodo == "MES": self.date_global.setDisplayFormat("MM/yyyy")
-        elif periodo == "ANIO": self.date_global.setDisplayFormat("yyyy")
+        
+        self.date_global.setEnabled(True) # Por defecto activado
+        
+        if periodo == "DIA": 
+            self.date_global.setDisplayFormat("dd/MM/yyyy")
+        elif periodo == "MES": 
+            self.date_global.setDisplayFormat("MM/yyyy")
+        elif periodo == "AÑO": 
+            self.date_global.setDisplayFormat("yyyy")
+        elif periodo == "SIEMPRE":
+            # Si es siempre, deshabilitamos el calendario visualmente
+            self.date_global.setDisplayFormat("---")
+            self.date_global.setEnabled(False)
 
     def generar_pdf_corporativo(self):
         """ Acción del botón """
@@ -1679,12 +1688,21 @@ class VentanaPrincipal(QMainWindow):
         anio = qdate.year()
 
         texto_fecha = ""
-        if periodo == "DIA": texto_fecha = f"{dia} de {mes} de {anio}"
-        elif periodo == "MES": texto_fecha = f"{mes} {anio}"
-        elif periodo == "ANIO": texto_fecha = f"Año {anio}"
+        if periodo == "DIA": 
+            texto_fecha = f"{dia} de {mes} de {anio}"
+        elif periodo == "MES": 
+            texto_fecha = f"{mes} {anio}"
+        elif periodo == "AÑO": 
+            texto_fecha = f"Año {anio}"
+        elif periodo == "SIEMPRE":
+            # === TEXTO ESPECIAL ===
+            texto_fecha = "HISTÓRICO GENERAL (Desde el inicio de operaciones)"
 
         # 3. PDF
-        nombre_pdf = f"Reporte_Global_{periodo}_{fecha_str}.pdf"
+        nombre_pdf = f"Reporte_Global_{periodo}.pdf" # Quitamos fecha del nombre si es SIEMPRE
+        if periodo != "SIEMPRE":
+            nombre_pdf = f"Reporte_Global_{periodo}_{fecha_str}.pdf"
+            
         generador = GeneradorPDF(nombre_pdf)
         generador.generar_reporte_global(periodo, texto_fecha, datos)
 

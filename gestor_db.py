@@ -740,16 +740,15 @@ class GestorBaseDatos:
         
 
     def obtener_datos_reporte_global(self, periodo, fecha_ref=None):
-        """ Extrae TODA la info: Totales, Bases, Tops y Horas Pico """
         from datetime import datetime
         
         if not fecha_ref: fecha_ref = datetime.now().strftime("%Y-%m-%d")
         
         conexion, cursor = self._conectar()
         
-        # 1. PREPARAR FILTROS
+        # 1. FILTROS
         filtro = ""
-        filtro_turnos = "" # Filtro especial para tabla de turnos
+        filtro_turnos = "" 
         
         if periodo == "DIA":
             filtro = f"AND date(fecha_hora_inicio) = '{fecha_ref}'"
@@ -760,26 +759,76 @@ class GestorBaseDatos:
         elif periodo == "ANIO":
             filtro = f"AND strftime('%Y', fecha_hora_inicio) = '{fecha_ref[:4]}'"
             filtro_turnos = f"AND strftime('%Y', fecha_inicio) = '{fecha_ref[:4]}'"
+        elif periodo == "SIEMPRE":
+            filtro = ""
+            filtro_turnos = ""
 
-        # --- A. TOTALES GENERALES ---
+        # A. TOTALES
         cursor.execute(f"SELECT count(*), sum(precio) FROM viajes WHERE 1=1 {filtro}")
         res_tot = cursor.fetchone()
-        totales = {
-            "viajes": res_tot[0] if res_tot[0] else 0,
-            "ganancia": res_tot[1] if res_tot[1] else 0.0
-        }
+        totales = {"viajes": res_tot[0] or 0, "ganancia": res_tot[1] or 0.0}
 
-        # --- B. BASES MÁS POPULARES (Top 5) ---
+        # B. BASES POPULARES (Top 5)
         sql_bases = f"""
-            SELECT b.nombre_base, count(*) as num
+            SELECT b.nombre_base, count(*) as num, b.id
             FROM viajes v JOIN cat_bases b ON v.base_salida_id = b.id
             WHERE b.id NOT IN (12, 13) {filtro}
             GROUP BY b.nombre_base ORDER BY num DESC LIMIT 5
         """
         cursor.execute(sql_bases)
-        top_bases = cursor.fetchall()
+        top_bases = cursor.fetchall() # [(Nombre, Cant, ID), ...]
 
-        # --- C. TOP 3 UNIDADES: INGRESOS ($) ---
+        # --- NUEVO: HORAS DE ORO POR BASE (El dato cruzado) ---
+        # Para cada una de las Top 5 bases, buscamos su día y hora pico
+        bases_pico_info = []
+        dias_semana = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
+        
+        for base in top_bases:
+            nombre_base = base[0]
+            base_id = base[2]
+            
+            # Buscamos el momento (Dia-Hora) con más viajes para ESTA base
+            # strftime('%w') da 0=Domingo, 1=Lunes...
+            sql_pico_base = f"""
+                SELECT strftime('%w', fecha_hora_inicio) as dia_num, 
+                       strftime('%H', fecha_hora_inicio) as hora, 
+                       count(*) as c
+                FROM viajes 
+                WHERE base_salida_id = ? {filtro}
+                GROUP BY dia_num, hora
+                ORDER BY c DESC LIMIT 1
+            """
+            cursor.execute(sql_pico_base, (base_id,))
+            pico = cursor.fetchone()
+            
+            if pico:
+                dia_txt = dias_semana[int(pico[0])]
+                hora_txt = f"{pico[1]}:00"
+                bases_pico_info.append([nombre_base, dia_txt, hora_txt, pico[2]])
+            else:
+                bases_pico_info.append([nombre_base, "---", "---", 0])
+
+        # --- NUEVO: DEMANDA POR DÍA DE LA SEMANA (Lunes a Domingo) ---
+        sql_sem = f"""
+            SELECT strftime('%w', fecha_hora_inicio) as dia, count(*) 
+            FROM viajes WHERE 1=1 {filtro} GROUP BY dia ORDER BY dia ASC
+        """
+        cursor.execute(sql_sem)
+        res_sem = cursor.fetchall()
+        # Rellenar ceros (0=Dom, 6=Sab)
+        mapa_sem = {str(i): 0 for i in range(7)}
+        for r in res_sem: mapa_sem[r[0]] = r[1]
+        
+        # Ordenar para gráfica: Lun(1) a Dom(0 o 7)
+        # En Python 0 es Domingo. Queremos orden Lun-Dom? O Dom-Sab?
+        # Usemos Lun(1) -> Dom(0) al final
+        orden_dias = ['1','2','3','4','5','6','0']
+        labels_dias = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+        values_dias = [mapa_sem[d] for d in orden_dias]
+        data_semana = list(zip(labels_dias, values_dias))
+
+
+        # C. TOP DINERO
         sql_top_dinero = f"""
             SELECT t.numero_economico, sum(v.precio) as total
             FROM viajes v JOIN taxis t ON v.taxi_id = t.id
@@ -788,7 +837,7 @@ class GestorBaseDatos:
         cursor.execute(sql_top_dinero)
         top_dinero = cursor.fetchall()
 
-        # --- D. TOP 3 UNIDADES: VIAJES (Cantidad) ---
+        # D. TOP VIAJES
         sql_top_viajes = f"""
             SELECT t.numero_economico, count(*) as total
             FROM viajes v JOIN taxis t ON v.taxi_id = t.id
@@ -797,8 +846,7 @@ class GestorBaseDatos:
         cursor.execute(sql_top_viajes)
         top_viajes = cursor.fetchall()
 
-        # --- E. TOP 3 UNIDADES: HORAS TRABAJADAS (CORREGIDO) ---
-        # Antes decía 't.numero_economico' (Error), ahora dice 'tx.numero_economico' (Correcto)
+        # E. TOP HORAS TRABAJADAS
         sql_top_horas = f"""
             SELECT tx.numero_economico, sum((julianday(fecha_fin) - julianday(fecha_inicio)) * 24) as horas
             FROM turnos_trabajo t JOIN taxis tx ON t.taxi_id = tx.id
@@ -808,137 +856,25 @@ class GestorBaseDatos:
         cursor.execute(sql_top_horas)
         top_horas_trabajadas = cursor.fetchall()
 
-        # --- F. HORAS PICO (Distribución por hora del día) ---
+        # F. HORAS PICO (Global)
         sql_pico = f"""
             SELECT strftime('%H', fecha_hora_inicio) as hr, count(*) 
             FROM viajes WHERE 1=1 {filtro} GROUP BY hr
         """
         cursor.execute(sql_pico)
-        # Rellenamos las 24 horas para que el gráfico no tenga huecos
         mapa_horas = {f"{h:02d}": 0 for h in range(24)}
-        for r in cursor.fetchall():
-            mapa_horas[r[0]] = r[1]
-            
-        horas_pico = list(mapa_horas.items()) # Lista de tuplas [('00', 5), ('01', 2)...]
+        for r in cursor.fetchall(): mapa_horas[r[0]] = r[1]
+        horas_pico = list(mapa_horas.items())
 
         conexion.close()
         
         return {
             "totales": totales,
-            "bases": top_bases,
+            "bases": top_bases, # (Nombre, Num, ID)
+            "bases_pico": bases_pico_info, # NUEVO: [[Base, Dia, Hora, Cant], ...]
+            "semana": data_semana, # NUEVO: [(Lun, 10), (Mar, 20)...]
             "top_dinero": top_dinero,
             "top_viajes": top_viajes,
             "top_horas": top_horas_trabajadas,
             "horas_pico": horas_pico
         }
-        """ Extrae TODA la info para el reporte ejecutivo de la empresa """
-        from datetime import datetime
-        import calendar
-
-        if not fecha_ref: fecha_ref = datetime.now().strftime("%Y-%m-%d")
-        
-        conexion, cursor = self._conectar()
-        
-        # 1. PREPARAR FILTROS (Igual que siempre)
-        filtro = ""
-        if periodo == "DIA":
-            filtro = f"AND date(fecha_hora_inicio) = '{fecha_ref}'"
-        elif periodo == "MES":
-            filtro = f"AND strftime('%Y-%m', fecha_hora_inicio) = '{fecha_ref[:7]}'"
-        elif periodo == "ANIO":
-            filtro = f"AND strftime('%Y', fecha_hora_inicio) = '{fecha_ref[:4]}'"
-
-        # 2. TOTALES GENERALES (Dinero y Viajes)
-        sql_totales = f"SELECT count(*), sum(precio) FROM viajes WHERE 1=1 {filtro}"
-        cursor.execute(sql_totales)
-        res_tot = cursor.fetchone()
-        totales = {
-            "viajes": res_tot[0] if res_tot[0] else 0,
-            "ganancia": res_tot[1] if res_tot[1] else 0.0
-        }
-
-        # 3. TOP 5 BASES (Aquí metemos el reporte de bases)
-        # Ignoramos base 12 (Fuera servicio) y 13 (Calle)
-        sql_bases = f"""
-            SELECT b.nombre_base, count(*) as num_viajes
-            FROM viajes v
-            JOIN cat_bases b ON v.base_salida_id = b.id
-            WHERE b.id NOT IN (12, 13) {filtro}
-            GROUP BY b.nombre_base
-            ORDER BY num_viajes DESC
-            LIMIT 5
-        """
-        cursor.execute(sql_bases)
-        top_bases = cursor.fetchall() # Lista de tuplas (Nombre, Cantidad)
-
-        # 4. TOP 5 CONDUCTORES (Por dinero generado)
-        sql_taxis = f"""
-            SELECT t.numero_economico, sum(v.precio) as dinero
-            FROM viajes v
-            JOIN taxis t ON v.taxi_id = t.id
-            WHERE 1=1 {filtro}
-            GROUP BY t.numero_economico
-            ORDER BY dinero DESC
-            LIMIT 5
-        """
-        cursor.execute(sql_taxis)
-        top_taxis = cursor.fetchall()
-
-        conexion.close()
-        
-        return {
-            "totales": totales,
-            "bases": top_bases,
-            "taxis": top_taxis
-        }
-
-
-        """ Trae el detalle de viajes para el reporte PDF """
-        sql = """
-            SELECT 
-                v.fecha_hora_inicio, 
-                v.tipo_servicio_id, 
-                b.nombre_base, 
-                v.destino, 
-                v.precio
-            FROM viajes v
-            LEFT JOIN cat_bases b ON v.base_salida_id = b.id
-            WHERE v.taxi_id = ?
-        """
-        # Filtros de fecha (Igual que en tus gráficas)
-        clausula = ""
-        if periodo == "HOY":
-            clausula = " AND date(v.fecha_hora_inicio) = date('now', 'localtime')"
-        elif periodo == "MES":
-            clausula = " AND strftime('%Y-%m', v.fecha_hora_inicio) = strftime('%Y-%m', 'now', 'localtime')"
-        elif periodo == "ANIO":
-            clausula = " AND strftime('%Y', v.fecha_hora_inicio) = strftime('%Y', 'now', 'localtime')"
-            
-        sql_final = f"{sql} {clausula} ORDER BY v.fecha_hora_inicio DESC"
-        
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql_final, (taxi_id,))
-            res = cursor.fetchall()
-            conexion.close()
-            
-            # Formateamos bonito para el PDF
-            mapa_servicios = {1: "Base", 2: "Tel. Base", 3: "Tel. Unidad", 4: "Aéreo"}
-            lista_procesada = []
-            
-            for r in res:
-                id_serv = r['tipo_servicio_id']
-                concepto = mapa_servicios.get(id_serv, "Viaje")
-                origen = r['nombre_base'] if r['nombre_base'] else "////"
-                
-                lista_procesada.append({
-                    "fecha_hora_inicio": r['fecha_hora_inicio'],
-                    "concepto": concepto,
-                    "origen": origen,
-                    "destino": r['destino'],
-                    "precio": r['precio']
-                })
-            return lista_procesada
-        except Exception as e:
-            print("Error viajes unidad:", e)
-            return []
