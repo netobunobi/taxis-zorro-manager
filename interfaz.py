@@ -3,6 +3,16 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QTabWidget, QWidget, QLin
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtCore import Qt
 from gestor_db import GestorBaseDatos
+from PyQt6.QtWidgets import QListWidgetItem
+
+# CLASE ESPECIAL PARA QUE SE ORDENEN POR NÚMERO
+# Esta clase enseña al programa que "100" es mayor que "35"
+class TaxiItem(QListWidgetItem):
+    def __lt__(self, other):
+        try:
+            return int(self.text()) < int(other.text())
+        except:
+            return self.text() < other.text()
 
 class VentanaPrincipal(QMainWindow):
     def __init__(self):
@@ -146,7 +156,7 @@ class VentanaPrincipal(QMainWindow):
         self.lista_viajes.setDefaultDropAction(Qt.DropAction.MoveAction)
 
         self.lista_viajes.model().rowsInserted.connect(
-            lambda: self.detectar_cambio_base(self.lista_viajes)
+            lambda parent, first, last: self.detectar_cambio_base(self.lista_viajes, first)
         )
         
         self.lista_viajes.setStyleSheet("""
@@ -161,7 +171,7 @@ class VentanaPrincipal(QMainWindow):
         # ¡IMPORTANTE! REGISTRAMOS EL ID 13 EN EL DICCIONARIO
         # Así cuando la BD diga "Taxi en base 13", el programa sabe que va aquí.
         
-        self.listas_bases[13] = self.lista_viajes 
+        
 
 
         # === CAJA ROJA: FUERA DE SERVICIO (ID 12) Y TALLER (ID 14) ===
@@ -186,7 +196,7 @@ class VentanaPrincipal(QMainWindow):
         self.lista_taller.setAcceptDrops(True)
         self.lista_taller.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.lista_taller.model().rowsInserted.connect(
-            lambda: self.detectar_cambio_base(self.lista_taller)
+            lambda parent, first, last: self.detectar_cambio_base(self.lista_taller, first)
         )
         self.lista_taller.setStyleSheet("""
             QListWidget { background: transparent; border: none; }
@@ -199,8 +209,8 @@ class VentanaPrincipal(QMainWindow):
 
         # ¡IMPORTANTE! REGISTRAMOS LOS IDs 12 y 14 AQUÍ
         # Redirigimos ambos estados a la misma caja roja
-        self.listas_bases[12] = self.lista_taller 
-        self.listas_bases[14] = self.lista_taller 
+        self.listas_bases[13] = self.lista_viajes 
+        self.listas_bases[12] = self.lista_taller
 
         # Agregar las cajas al layout vertical derecho
         layout_derecha.addWidget(caja_viaje, 1) 
@@ -370,7 +380,7 @@ class VentanaPrincipal(QMainWindow):
             
             # Conectamos el evento para que guarde en la BD al soltar
             lista_taxis.model().rowsInserted.connect(
-                lambda index, first, last, w=lista_taxis: self.detectar_cambio_base(w)
+                lambda parent, first, last, w=lista_taxis: self.detectar_cambio_base(w, first)
             )
             # ------------------------------------------------------
 
@@ -494,7 +504,7 @@ class VentanaPrincipal(QMainWindow):
             id_base = taxi['base_actual_id']
 
             if id_base in self.listas_bases:
-                item = QListWidgetItem(numero)
+                item = TaxiItem(numero)
                 
                 # --- NÚMERO MÁS GRANDE Y FUENTE ---
                 font = item.font()
@@ -512,11 +522,11 @@ class VentanaPrincipal(QMainWindow):
                 
                 self.listas_bases[id_base].addItem(item)
 
-    def detectar_cambio_base(self, lista_destino):
-        """ ACTUALIZADA: Ahora llama al cerebro que decide si cobrar o marcar entrada """
+    def detectar_cambio_base(self, lista_destino, indice_caida):
+        """ ACTUALIZADA: Recibe el índice exacto donde cayó la ficha """
         from PyQt6.QtCore import QTimer
-        # El retraso es vital para que currentItem() no devuelva None
-        QTimer.singleShot(50, lambda: self._ejecutar_actualizacion_bd(lista_destino))
+        # Pasamos el índice a la lógica
+        QTimer.singleShot(50, lambda: self._ejecutar_actualizacion_bd(lista_destino, indice_caida))
 
     
 
@@ -572,60 +582,58 @@ class VentanaPrincipal(QMainWindow):
         self.btn_bases.setChecked(indice == 2)
 
 
-    def _ejecutar_actualizacion_bd(self, lista_destino):
-            count = lista_destino.count()
-            if count == 0: return
-            item = lista_destino.item(count - 1)
-            if not item: return
+    def _ejecutar_actualizacion_bd(self, lista_destino, indice_item):
+        # 1. OBTENEMOS EL TAXI EXACTO QUE SE MOVIÓ (No el último)
+        item = lista_destino.item(indice_item)
+        if not item: return
 
-            taxi_id_bd = item.data(Qt.ItemDataRole.UserRole)
-            taxi_num = item.text()
-            
-            # 1. Identificar ID de la base de destino
-            id_base_nueva = None
+        taxi_id_bd = item.data(Qt.ItemDataRole.UserRole)
+        taxi_num = item.text()
+        
+        # 2. IDENTIFICACIÓN SEGURA DE LA BASE
+        id_base_nueva = None
+        if lista_destino == self.lista_taller:
+            id_base_nueva = 12
+        elif lista_destino == self.lista_viajes:
+            id_base_nueva = 13
+        else:
             for id_b, widget in self.listas_bases.items():
                 if widget == lista_destino:
                     id_base_nueva = id_b
                     break
 
-            if id_base_nueva and taxi_id_bd:
-                # --- 2. CONSULTAR ESTADO ANTERIOR (De dónde venía) ---
-                # Esto es vital para saber si iniciamos turno al ir directo a viaje
-                conexion, cursor = self.db._conectar()
-                cursor.execute("SELECT base_actual_id FROM taxis WHERE id = ?", (taxi_id_bd,))
-                res = cursor.fetchone()
-                id_base_anterior = res['base_actual_id'] if res else None
-                conexion.close()
+        # 3. VERIFICAR Y GUARDAR
+        if id_base_nueva and taxi_id_bd:
+            conexion, cursor = self.db._conectar()
+            cursor.execute("SELECT base_actual_id FROM taxis WHERE id = ?", (taxi_id_bd,))
+            res = cursor.fetchone()
+            conexion.close()
+            
+            id_base_anterior = res['base_actual_id'] if res else None
 
-                # --- 3. LÓGICA DE NEGOCIO SEGÚN DESTINO ---
-                
-                if id_base_nueva == 13: # DESTINO: EN VIAJE
-                    # Si venía de Fuera de Servicio (12), abrimos turno primero
-                    if id_base_anterior == 12:
-                        self.db.hora_entrada(taxi_id_bd)
-                        print(f"☀️ Turno iniciado (salida directa a viaje): {taxi_num}")
-                    
-                    # Abrimos la ventana que ya arreglamos (la de QDialog.DialogCode.Accepted)
+            # Si es un movimiento real, ejecutamos lógica
+            if id_base_anterior != id_base_nueva:
+                # Lógica de Negocio (Igual que antes, pero ahora sí se ejecuta)
+                if id_base_nueva == 13: # VIAJE
+                    if id_base_anterior == 12: self.db.hora_entrada(taxi_id_bd)
                     self.abrir_ventana_nuevo_viaje(taxi_id_bd, taxi_num)
 
-                elif id_base_nueva == 12: # DESTINO: FUERA DE SERVICIO
+                elif id_base_nueva == 12: # FUERA SERVICIO
+                    print(f"🛑 CERRANDO TURNO taxi {taxi_num}")
                     self.db.hora_salida(taxi_id_bd)
-                    # Por si venía de un viaje y lo mandaron directo a taller
                     self.db.registrar_fin_viaje(taxi_id_bd)
 
-                elif id_base_nueva <= 11: # DESTINO: BASES NORMALES
-                    # Si venía de Fuera de Servicio, iniciamos turno
-                    if id_base_anterior == 12:
-                        self.db.hora_entrada(taxi_id_bd)
-                    
-                    # Si venía de Viaje, cerramos el viaje
+                elif id_base_nueva <= 11: # BASES
+                    if id_base_anterior == 12: self.db.hora_entrada(taxi_id_bd)
                     self.db.registrar_fin_viaje(taxi_id_bd)
 
-                # --- 4. PERSISTENCIA FINAL (Actualiza la tabla 'taxis') ---
-                # Esta línea se ejecuta siempre al final para que el cambio sea permanente
+                # Guardado final
                 self.db.actualizar_taxi_base(taxi_id_bd, id_base_nueva)
-                
-                print(f"✅ Sincronizado: {taxi_num} (De {id_base_anterior} a {id_base_nueva})")
+                print(f"✅ Guardado: {taxi_num} en Base {id_base_nueva}")
+        
+        # 4. ORDENAR LA LISTA AUTOMÁTICAMENTE
+        # Esto soluciona que queden desordenados
+        lista_destino.sortItems(Qt.SortOrder.AscendingOrder)
 
 
 
