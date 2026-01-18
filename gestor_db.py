@@ -149,17 +149,15 @@ class GestorBaseDatos:
     # ==========================================
 
     def actualizar_taxi_base(self, taxi_id, base_actual_id):
-        """Mueve un taxi de una base a otra (o a Taller/Viaje)."""
         sql = "UPDATE taxis SET base_actual_id = ? WHERE id = ?"
-        datos = (base_actual_id, taxi_id)
         try:
             conexion, cursor = self._conectar()
-            cursor.execute(sql, datos)
-            conexion.commit()
+            cursor.execute(sql, (base_actual_id, taxi_id))
+            conexion.commit() # <--- IMPORTANTE: Esto guarda el archivo en el disco
             conexion.close()
             return True
         except Exception as error:
-            print("ERROR al mover taxi:", error)
+            print(f"Error al guardar: {error}")
             return False
 
     def registrar_viaje(self, taxi_id, tipo_servicio_id, base_salida_id, destino, precio):
@@ -212,20 +210,28 @@ class GestorBaseDatos:
     # ==========================================
 
     def hora_entrada(self, taxi_id):
-        """Abre un turno de trabajo."""
-        fecha_inicio = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        sql = "INSERT INTO turnos_trabajo (taxi_id, fecha_inicio, fecha_fin) VALUES (?,?,?)"
-        datos = (taxi_id, fecha_inicio, None)
-
+        """ Solo abre un turno si NO hay uno abierto ya (evita duplicados al mover entre bases) """
         try:
             conexion, cursor = self._conectar()
-            cursor.execute(sql, datos)
+            
+            # Verificamos si ya existe un turno abierto para este taxi
+            cursor.execute("SELECT id FROM turnos_trabajo WHERE taxi_id = ? AND fecha_fin IS NULL", (taxi_id,))
+            existe_turno = cursor.fetchone()
+            
+            if existe_turno:
+                conexion.close()
+                return True # Ya está trabajando, no hacemos nada
+            
+            # Si no hay turno abierto, lo creamos
+            fecha_inicio = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cursor.execute("INSERT INTO turnos_trabajo (taxi_id, fecha_inicio) VALUES (?,?)", (taxi_id, fecha_inicio))
+            
             conexion.commit()
             conexion.close()
             print(f"🕒 Turno abierto para taxi {taxi_id}")
             return True
-        except Exception as error:
-            print("Error al abrir turno:", error)
+        except Exception as e:
+            print(f"Error en hora_entrada: {e}")
             return False
         
     def hora_salida(self, taxi_id):
@@ -249,4 +255,36 @@ class GestorBaseDatos:
             return True
         except Exception as error:
             print("Error al cerrar turno: ", error)
+            return False
+        
+
+    def obtener_id_por_numero(self, numero):
+        """Busca el ID de un taxi usando su número económico (ej. 80)"""
+        try:
+            conexion, cursor = self._conectar()
+            cursor.execute("SELECT id FROM taxis WHERE numero_economico = ?", (numero,))
+            res = cursor.fetchone()
+            conexion.close()
+            return res['id'] if res else None
+        except:
+            return None
+        
+    def registrar_fin_viaje(self, taxi_id):
+        """Busca el viaje activo del taxi y pone la fecha_hora_fin"""
+        # CORRECCIÓN: Nombre de columna cambiado a fecha_hora_fin
+        sql = "UPDATE viajes SET fecha_hora_fin = datetime('now') WHERE taxi_id = ? AND fecha_hora_fin IS NULL"
+        try:
+            conexion, cursor = self._conectar()
+            cursor.execute(sql, (taxi_id,))
+            
+            # Solo si realmente había un viaje abierto que cerrar
+            if cursor.rowcount > 0:
+                conexion.commit()
+                print(f"🏁 Viaje finalizado en BD para taxi ID: {taxi_id}")
+            
+            conexion.close()
+            return True
+        except Exception as e:
+            # Aquí verás si hay algún otro error de nombre
+            print(f"❌ Error al cerrar viaje en BD: {e}")
             return False

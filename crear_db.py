@@ -106,8 +106,7 @@ def crear_base_datos():
         
         # --- Ubicaciones Virtuales ---
         (12, 'Fuera de Servicio'),
-        (13, 'En Viaje'),
-        (14, 'Taller')
+        (13, 'En Viaje')
     ]
     cursor.executemany("INSERT OR IGNORE INTO cat_bases (id, nombre_base) VALUES (?, ?)", datos_bases)
 
