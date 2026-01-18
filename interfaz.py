@@ -630,55 +630,69 @@ class VentanaPrincipal(QMainWindow):
 
 
     def abrir_ventana_nuevo_viaje(self, taxi_id, taxi_num):
-        """ NUEVA: Ventana emergente para capturar datos del viaje al mover a zona verde """
-        from PyQt6.QtWidgets import QDialog, QFormLayout, QLineEdit, QDialogButtonBox, QVBoxLayout
-        
-        dialogo = QDialog(self)
-        dialogo.setWindowTitle(f"🚕 Registrar Viaje - Taxi {taxi_num}")
-        dialogo.setMinimumWidth(300)
-        dialogo.setStyleSheet("""
-            QDialog { background-color: #1E293B; }
-            QLabel { color: #FACC15; font-weight: bold; }
-            QLineEdit { background-color: #0F172A; color: white; border: 1px solid #334155; padding: 5px; }
-        """)
-        
-        layout = QVBoxLayout(dialogo)
-        formulario = QFormLayout()
-        
-        # Guardamos como self para leerlos abajo
-        self.txt_destino = QLineEdit()
-        self.txt_costo = QLineEdit()
-        self.txt_costo.setPlaceholderText("0.00")
-        
-        formulario.addRow("📍 Destino:", self.txt_destino)
-        formulario.addRow("💰 Costo $:", self.txt_costo)
-        
-        layout.addLayout(formulario)
-        
-        botones = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        botones.accepted.connect(dialogo.accept)
-        botones.rejected.connect(dialogo.reject)
-        layout.addWidget(botones)
-
-        # CORRECCIÓN AQUÍ: Se agrega .DialogCode.
-        if dialogo.exec() == QDialog.DialogCode.Accepted:
-            destino = self.txt_destino.text()
-            costo_str = self.txt_costo.text().replace(',', '.')
+            """ Ventana emergente con menú desplegable para tipo de servicio """
+            from PyQt6.QtWidgets import QDialog, QFormLayout, QLineEdit, QComboBox, QDialogButtonBox, QVBoxLayout
             
-            try:
-                costo = float(costo_str) if costo_str else 0.0
-            except ValueError:
-                costo = 0.0 
+            dialogo = QDialog(self)
+            dialogo.setWindowTitle(f"🚕 Nuevo Viaje - Unidad {taxi_num}")
+            dialogo.setMinimumWidth(350)
+            dialogo.setStyleSheet("""
+                QDialog { background-color: #1E293B; border: 2px solid #00D1FF; border-radius: 10px; }
+                QLabel { color: #FACC15; font-weight: bold; font-size: 14px; }
+                QLineEdit, QComboBox { 
+                    background-color: #0F172A; color: white; 
+                    border: 1px solid #334155; padding: 5px; border-radius: 5px;
+                }
+                QComboBox QAbstractItemView { background-color: #0F172A; color: white; selection-background-color: #334155; }
+            """)
             
-            # 1. Registrar el viaje en la BD
-            self.db.registrar_viaje(taxi_id, 1, 13, destino, costo) 
-            # 2. Actualizar su posición visual y en tabla taxis
-            self.db.actualizar_taxi_base(taxi_id, 13) 
-            print(f"✅ Viaje guardado: Taxi {taxi_num} a {destino}")
-        else:
-            # SI CANCELA: Refrescamos el tablero para que el taxi regrese a su base original
-            self.cargar_datos_en_tablero()
+            layout = QVBoxLayout(dialogo)
+            formulario = QFormLayout()
+            
+            # 1. Menú Desplegable de Servicios
+            self.cmb_servicio = QComboBox()
+            # El orden coincide con los IDs 1, 2, 3, 4 de tu imagen
+            self.cmb_servicio.addItems([
+                "Viaje en base", 
+                "Teléfono base", 
+                "Teléfono unidad", 
+                "Viaje aéreo"
+            ])
+            
+            # 2. Otros Campos
+            self.txt_destino = QLineEdit()
+            self.txt_destino.setPlaceholderText("¿A dónde va?")
+            
+            self.txt_costo = QLineEdit()
+            self.txt_costo.setPlaceholderText("0.00")
+            
+            formulario.addRow("🛠️ Servicio:", self.cmb_servicio)
+            formulario.addRow("📍 Destino:", self.txt_destino)
+            formulario.addRow("💰 Costo $:", self.txt_costo)
+            
+            layout.addLayout(formulario)
+            
+            botones = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            botones.accepted.connect(dialogo.accept)
+            botones.rejected.connect(dialogo.reject)
+            layout.addWidget(botones)
 
+            if dialogo.exec() == QDialog.DialogCode.Accepted:
+                # Obtenemos el ID del servicio (índice + 1 porque en BD empiezan en 1)
+                id_tipo_servicio = self.cmb_servicio.currentIndex() + 1
+                destino = self.txt_destino.text()
+                
+                try:
+                    costo = float(self.txt_costo.text().replace(',', '.')) if self.txt_costo.text() else 0.0
+                except ValueError:
+                    costo = 0.0 
+                
+                # Guardamos con el ID de servicio seleccionado
+                self.db.registrar_viaje(taxi_id, id_tipo_servicio, 13, destino, costo) 
+                self.db.actualizar_taxi_base(taxi_id, 13) 
+                print(f"✅ Viaje registrado: Unidad {taxi_num} - {self.cmb_servicio.currentText()}")
+            else:
+                self.cargar_datos_en_tablero()
 
     def filtrar_taxis_tablero(self, texto):
         """Filtra los taxis por número económico"""
