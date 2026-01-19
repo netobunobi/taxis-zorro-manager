@@ -96,9 +96,21 @@ Si deseas clonar y modificar el código fuente:
    ```
    ## 🛡️ Licencia
 
-**Copyright © 2026 Ernesto Velez Ortega.**
+## 🛡️ Licencia y Términos de Uso
 
-Este proyecto es privado y propietario para uso exclusivo de **Taxis El Zorro**. Todos los derechos reservados.
+**Copyright © 2026 Ernesto Velez Ortega. Todos los derechos reservados.**
+
+Este software es **PROPIEDAD PRIVADA** y ha sido desarrollado exclusivamente para la operación interna de **Taxis El Zorro**.
+
+### 1. Restricciones de Uso
+El código fuente publicado en este repositorio se exhibe únicamente con fines de **portafolio profesional, educativos y de auditoría técnica**.
+* **Queda estrictamente prohibido:** La copia, descarga, redistribución, modificación, venta, uso comercial o uso privado de este software (total o parcial) sin la autorización expresa y por escrito del autor.
+* No se concede ninguna licencia implícita ni derechos de propiedad intelectual a terceros que visualicen este repositorio.
+
+### 2. Exención de Responsabilidad (Disclaimer)
+ESTE SOFTWARE SE PROPORCIONA "TAL CUAL", SIN GARANTÍA DE NINGÚN TIPO, EXPRESA O IMPLÍCITA, INCLUYENDO PERO NO LIMITADO A LAS GARANTÍAS DE COMERCIABILIDAD, IDONEIDAD PARA UN PROPÓSITO PARTICULAR Y NO INFRACCIÓN.
+
+EN NINGÚN CASO EL AUTOR (ERNESTO VELEZ ORTEGA) O LOS TITULARES DE LOS DERECHOS DE AUTOR SERÁN RESPONSABLES DE NINGUNA RECLAMACIÓN, DAÑOS U OTRAS RESPONSABILIDADES, YA SEA EN UNA ACCIÓN DE CONTRATO, AGRAVIO O DE OTRO TIPO, QUE SURJAN DE, FUERA DE O EN CONEXIÓN CON EL SOFTWARE O EL USO U OTRAS OPERACIONES EN EL SOFTWARE.
 
 ---
 <div align="center">
