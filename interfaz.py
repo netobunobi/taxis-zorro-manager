@@ -1,4 +1,26 @@
 import sys
+import traceback
+from datetime import datetime
+
+# === CAZADOR DE ERRORES ===
+# Esto guardará cualquier fallo en un archivo de texto
+def log_excepciones(type, value, tb):
+    texto_error = "".join(traceback.format_exception(type, value, tb))
+    fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Escribir el error en "errores_crash.txt"
+    with open("errores_crash.txt", "a", encoding="utf-8") as f:
+        f.write(f"\n\n--- ERROR REGISTRADO: {fecha} ---\n")
+        f.write(texto_error)
+        f.write("\n----------------------------------\n")
+    
+    # Mostrar el error en la consola si existe, o cerrar si es fatal
+    sys.__excepthook__(type, value, tb)
+
+# Activamos el cazador
+sys.excepthook = log_excepciones
+
+import sys
 from PyQt6.QtGui import QFont, QColor # Agrega QFont aquí
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QWidget, QLineEdit, 
@@ -14,6 +36,12 @@ from gestor_db import GestorBaseDatos
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from reportes import GeneradorPDF
+from PyQt6.QtGui import QFont, QColor, QPixmap # <--- Agrega QPixmap
+from PyQt6.QtWidgets import (
+    QApplication, QSplashScreen, # <--- Agrega QSplashScreen
+    QMainWindow, # ... y el resto que ya tenías
+)
+import time # Opcional, por si quieres que dure un poquito más a propósito
 
 class LienzoGrafico(FigureCanvas):
     def __init__(self, parent=None, color_fondo='#1E293B'):
@@ -1717,6 +1745,48 @@ class VentanaPrincipal(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
+    # --- PANTALLA DE CARGA (SPLASH SCREEN) ---
+    # Usamos el logo PNG porque se ve mejor (el ICO es muy pequeño)
+    # Asegúrate de usar la función ruta_recurso si ya la implementaste, 
+    # o pon el nombre directo si estás probando en código.
+    import os
+    
+    # Truco para encontrar el logo tanto en .py como en .exe
+    def ruta_recurso_simple(relativo):
+        try:
+            base_path = sys._MEIPASS
+        except Exception:
+            base_path = os.path.abspath(".")
+        return os.path.join(base_path, relativo)
+
+    ruta_logo = ruta_recurso_simple("LogoElZorropng.png") # Usa el PNG grande
+    
+    if os.path.exists(ruta_logo):
+        pixmap = QPixmap(ruta_logo)
+        
+        # Opcional: Escalarlo si es GIGANTE (ej. limitarlo a 400x400)
+        pixmap = pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        
+        splash = QSplashScreen(pixmap)
+        splash.show()
+        
+        # Forzamos a que se pinte en pantalla
+        app.processEvents()
+        
+        # (Opcional) Un pequeño sleep si carga demasiado rápido y quieres presumir el logo
+        # import time
+        # time.sleep(1.5) 
+    else:
+        splash = None
+
+    # --- CARGA DE LA VENTANA PRINCIPAL ---
+    # Mientras el splash se muestra, aquí Python trabaja cargando la BD y la interfaz
     ventana = VentanaPrincipal()
     ventana.showMaximized()
+
+    # --- CERRAR SPLASH ---
+    if splash:
+        splash.finish(ventana) # Cierra el splash cuando la ventana esté lista
+
     sys.exit(app.exec())
