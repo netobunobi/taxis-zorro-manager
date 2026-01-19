@@ -94,7 +94,6 @@ Si deseas clonar y modificar el código fuente:
    ```bash
    python interfaz.py
    ```
-   ## 🛡️ Licencia
 
 ## 🛡️ Licencia y Términos de Uso
 
