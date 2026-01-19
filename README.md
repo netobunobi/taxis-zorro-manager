@@ -75,20 +75,25 @@ Si deseas clonar y modificar el código fuente:
    ```bash
    git clone https://github.com/netobunobi/taxis-zorro-manager.git
    cd taxis-zorro-manager
+   ```
    2. **Crear entorno virtual (Recomendado):**
    ```bash
    python -m venv venv
    # En Windows:
    venv\Scripts\activate
+   ```
    3. **Instalar dependencias:**
    ```bash
    pip install PyQt6 matplotlib reportlab pyinstaller
+   ```
    4. **Inicializar Base de Datos:**
    ```bash
    python reset_db.py
+   ```
    5. **Ejecutar la interfaz:**
    ```bash
    python interfaz.py
+   ```
    ## 🛡️ Licencia
 
 **Copyright © 2026 Ernesto Velez Ortega.**
