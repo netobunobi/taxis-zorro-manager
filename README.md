@@ -2,12 +2,13 @@
 
 # 🚖 Taxis Zorro Manager
 
-**Sistema de Gestión de Flotilla y Despacho de Unidades**
+**Sistema Integral de Gestión de Flotilla, Despacho y Business Intelligence**
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)
 ![PyQt6](https://img.shields.io/badge/GUI-PyQt6-green?style=for-the-badge&logo=qt&logoColor=white)
 ![SQLite](https://img.shields.io/badge/Data-SQLite3-003B57?style=for-the-badge&logo=sqlite&logoColor=white)
-![Status](https://img.shields.io/badge/Estado-En%20Desarrollo-orange?style=for-the-badge)
+![Status](https://img.shields.io/badge/Estado-Terminado%20(v1.0)-success?style=for-the-badge)
+![Platform](https://img.shields.io/badge/Plataforma-Windows-blueviolet?style=for-the-badge&logo=windows&logoColor=white)
 
 </div>
 
@@ -15,76 +16,58 @@
 
 ## 📄 Descripción
 
-**Taxis Zorro Manager** es una aplicación de escritorio diseñada para modernizar y facilitar la administración de bases de taxis. Sustituye las bitácoras en papel y hojas de cálculo complejas con una interfaz visual intuitiva basada en **Arrastrar y Soltar (Drag & Drop)**.
+**Taxis Zorro Manager** es una solución de software "llave en mano" diseñada para digitalizar la operación de bases de taxis. El sistema elimina el uso de papel, optimiza la asignación de viajes y provee inteligencia de negocios para maximizar los ingresos de la flotilla.
 
-El sistema permite a las operadoras asignar viajes, controlar tiempos de descanso y generar reportes financieros en tiempo real, minimizando errores humanos en el cobro y registro de datos.
+A diferencia de una simple hoja de cálculo, este sistema ofrece un entorno visual con **fichas interactivas**, gestión de estados en tiempo real y generación automática de reportes financieros y operativos.
 
-## 🚀 Características Principales
+## 🚀 Características y Funcionalidades
 
-* **🎛️ Tablero Visual Interactivo:** Gestión de unidades mediante sistema Drag & Drop. Mueve taxis visualmente entre las zonas de "Base", "Viaje" y "Taller".
-* **⏱️ Control de Tiempos Reales:** Cálculo automático de horas trabajadas vs. horas de descanso/taller.
-* **✏️ Corrección de Errores:** Sistema de bitácora editable para corregir tarifas mal ingresadas (ej. *$1500* vs *$150*) recalculando los totales al instante.
-* **📊 Reportes y Gráficos:**
-    * Generación de reportes PDF para corte de caja.
-    * Gráficos estadísticos (Matplotlib) para analizar ingresos por unidad, base con más ventas y tipos de servicio (Teléfono, Aéreo, Base).
-* **💾 Base de Datos Local:** Almacenamiento seguro y rápido con SQLite, sin necesidad de conexión a internet constante.
+### 🎮 Control Operativo Visual
+* **Sistema Drag & Drop:** Asignación de unidades arrastrando fichas visuales (estilo neón) entre bases físicas, zonas de viaje y talleres.
+* **Lógica de Rebote:** Detección automática de viajes consecutivos y validaciones de seguridad para evitar errores de captura.
+* **Gestión de Flota:** Base de datos pre-cargada con unidades del 35 al 100, con capacidad de altas y bajas administrativas.
+
+### 🧠 Inteligencia de Negocios (BI)
+* **Heatmaps de Horas Pico:** Gráficos que muestran las horas de mayor demanda para optimizar la disponibilidad de choferes.
+* **Análisis "Momentos de Oro":** Identificación automática de qué base vende más en qué día y a qué hora (ej. *Mercado - Sábado - 12:00 PM*).
+* **Rankings de Desempeño:** "Salón de la Fama" con los top 3 conductores por ingresos, número de viajes y horas trabajadas.
+
+### 📉 Reportes Corporativos
+* **Reportes PDF Ejecutivos:** Generación de documentos PDF listos para imprimir con:
+    * Resumen financiero (Ingresos, Ticket Promedio).
+    * Gráficos de pastel y barras integrados.
+    * Tablas de desglose detallado.
+* **Filtros Temporales:** Reportes por Día, Mes, Año o Histórico completo ("Siempre").
+
+### 🛠️ Detalles Técnicos
+* **Pantalla de Carga (Splash Screen):** Inicio profesional con logotipo corporativo.
+* **Base de Datos Unificada:** SQLite local optimizada con llaves foráneas e integridad referencial.
+* **Portable:** Compilado en un ejecutable `.exe` independiente que no requiere instalación de Python en el cliente.
 
 ## 🛠️ Stack Tecnológico
 
-Este proyecto ha sido desarrollado utilizando herramientas modernas y librerías robustas de Python:
-
 | Categoría | Tecnología | Uso |
 | :--- | :--- | :--- |
-| **Lenguaje** | ![Python](https://img.shields.io/badge/-Python-black?style=flat&logo=python) | Lógica del sistema y backend. |
-| **Interfaz (GUI)** | ![PyQt](https://img.shields.io/badge/-PyQt6-green?style=flat&logo=qt) | Ventanas, eventos y Drag & Drop. |
-| **Base de Datos** | ![SQLite](https://img.shields.io/badge/-SQLite-blue?style=flat&logo=sqlite) | Persistencia de datos local. |
-| **Reportes PDF** | **ReportLab / FPDF** | Generación de tickets y reportes impresos. |
-| **Gráficos** | **Matplotlib** | Visualización de estadísticas y métricas. |
-| **IDE** | ![VS Code](https://img.shields.io/badge/-VS%20Code-007ACC?style=flat&logo=visual-studio-code) | Entorno de desarrollo. |
+| **Lenguaje** | ![Python](https://img.shields.io/badge/-Python-black?style=flat&logo=python) | Lógica de negocio y backend. |
+| **Interfaz (GUI)** | ![PyQt](https://img.shields.io/badge/-PyQt6-green?style=flat&logo=qt) | Ventanas, eventos, Drag & Drop y estilos CSS. |
+| **Base de Datos** | ![SQLite](https://img.shields.io/badge/-SQLite-blue?style=flat&logo=sqlite) | Almacenamiento local de viajes y catálogos. |
+| **Reportes** | **ReportLab** | Motor de generación de PDFs pixel-perfect. |
+| **Análisis** | **Matplotlib** | Generación de gráficos estadísticos para reportes. |
+| **Empaquetado** | **PyInstaller** | Compilación a binario (.exe) para Windows. |
 
-## 📸 Capturas de Pantalla (Preview)
+## 📥 Descarga e Instalación (Usuario Final)
 
-*(Próximamente: Aquí se mostrará el tablero visual y los gráficos de rendimiento)*
+1. Ve a la sección de **[Releases](https://github.com/netobunobi/taxis-zorro-manager/releases)** de este repositorio.
+2. Descarga el archivo `.zip` de la última versión.
+3. Descomprime la carpeta en tu Escritorio.
+4. Ejecuta `SistemaTaxisZorro.exe`.
+   * *Nota: Asegúrate de que el archivo `taxis.db` esté en la misma carpeta que el ejecutable.*
 
-> *El proyecto se encuentra en fase activa de desarrollo de la interfaz gráfica.*
+## 🔧 Instalación y Desarrollo (Para Programadores)
 
-## 🔧 Instalación y Uso (Para Desarrolladores)
+Si deseas clonar y modificar el código fuente:
 
-Si deseas clonar y probar este proyecto localmente:
-
-1.  **Clonar el repositorio:**
-    ```bash
-    git clone [https://github.com/netobunobi/taxis-zorro-manager.git](https://github.com/netobunobi/taxis-zorro-manager.git)
-    cd taxis-zorro-manager
-    ```
-
-2.  **Crear entorno virtual (Recomendado):**
-    ```bash
-    python -m venv venv
-    # En Windows:
-    venv\Scripts\activate
-    ```
-
-3.  **Instalar dependencias:**
-    ```bash
-    pip install PyQt6 matplotlib reportlab
-    ```
-
-4.  **Inicializar Base de Datos:**
-    ```bash
-    python crear_bd.py
-    ```
-
-5.  **Ejecutar la aplicación:**
-    ```bash
-    python main.py
-    ```
-
-## 🛡️ Licencia
-
-Este proyecto es privado y propietario para uso exclusivo de **Taxis El Zorro**. Todos los derechos reservados.
-
----
-<div align="center">
-    <sub>Desarrollado con dedicación y Python por Ernesto Velez Ortega</sub>
-</div>
+1. **Clonar el repositorio:**
+   ```bash
+   git clone [https://github.com/netobunobi/taxis-zorro-manager.git](https://github.com/netobunobi/taxis-zorro-manager.git)
+   cd taxis-zorro-manager
