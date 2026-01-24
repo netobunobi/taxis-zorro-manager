@@ -1,6 +1,11 @@
 import sys
 import traceback
 from datetime import datetime
+import sqlite3
+import os
+import sys
+import ctypes # Para ocultar el archivo en Windows
+from PyQt6.QtWidgets import QMessageBox, QApplication # ... y los demás que ya tienes
 
 # === CAZADOR DE ERRORES ===
 # Esto guardará cualquier fallo en un archivo de texto
@@ -40,6 +45,13 @@ from PyQt6.QtGui import QFont, QColor, QPixmap # <--- Agrega QPixmap
 from PyQt6.QtWidgets import (
     QApplication, QSplashScreen, # <--- Agrega QSplashScreen
     QMainWindow, # ... y el resto que ya tenías
+)
+# --- EN TUS IMPORTS AL INICIO ---
+from PyQt6.QtCore import Qt, QTimer, QDate, QTime, QSharedMemory  # <--- AGREGAR QSharedMemory
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+    QLabel, QPushButton, QFrame, QGridLayout, QScrollArea, 
+    QMessageBox, QComboBox, QDateEdit, QSplashScreen # <--- AGREGAR QMessageBox SI FALTABA
 )
 import time # Opcional, por si quieres que dure un poquito más a propósito
 
@@ -1736,57 +1748,169 @@ class VentanaPrincipal(QMainWindow):
 
 
 
+def verificar_y_crear_db():
+    """
+    Verifica si existe la BD. Si no, pregunta al usuario si quiere crearla.
+    Retorna True si la BD está lista, False si se canceló.
+    """
+    nombre_db = "taxis.db"
     
+    # Si ya existe, nos aseguramos que esté oculta para protegerla y salimos
+    if os.path.exists(nombre_db):
+        try:
+            # 0x02 es el atributo de archivo OCULTO en Windows
+            ctypes.windll.kernel32.SetFileAttributesW(nombre_db, 0x02)
+        except:
+            pass
+        return True
+
+    # Si NO existe, preguntamos
+    msg = QMessageBox()
+    msg.setIcon(QMessageBox.Icon.Question)
+    msg.setWindowTitle("Base de Datos No Encontrada")
+    msg.setText("⚠️ No se encontró el archivo 'taxis.db'.\n\n¿Deseas crear una nueva base de datos con la configuración inicial (Taxis 35-100)?")
+    msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+    resp = msg.exec()
+
+    if resp == QMessageBox.StandardButton.No:
+        return False
+
+    # --- CREACIÓN DE LA BD (Lógica de reset_db.py) ---
+    try:
+        conexion = sqlite3.connect(nombre_db)
+        cursor = conexion.cursor()
+        cursor.execute("PRAGMA foreign_keys = ON;")
+
+        # 1. ESTRUCTURA
+        cursor.execute("""CREATE TABLE IF NOT EXISTS cat_tipos_servicio (id INTEGER PRIMARY KEY AUTOINCREMENT, descripcion TEXT UNIQUE NOT NULL);""")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS cat_bases (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre_base TEXT UNIQUE NOT NULL);""")
+        
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS taxis (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero_economico TEXT NOT NULL,
+            estado_sistema TEXT DEFAULT 'ACTIVO',
+            fecha_alta TEXT, fecha_baja TEXT,
+            base_actual_id INTEGER DEFAULT 12, 
+            FOREIGN KEY(base_actual_id) REFERENCES cat_bases(id)
+        );""")
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS viajes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            taxi_id INTEGER NOT NULL,
+            tipo_servicio_id INTEGER NOT NULL,
+            base_salida_id INTEGER,
+            destino TEXT, precio REAL DEFAULT 0.0,
+            fecha_hora_inicio TEXT, fecha_hora_fin TEXT,
+            FOREIGN KEY(taxi_id) REFERENCES taxis(id),
+            FOREIGN KEY(tipo_servicio_id) REFERENCES cat_tipos_servicio(id),
+            FOREIGN KEY(base_salida_id) REFERENCES cat_bases(id)
+        );""")
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS turnos_trabajo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            taxi_id INTEGER NOT NULL,
+            fecha_inicio TEXT, fecha_fin TEXT,
+            FOREIGN KEY(taxi_id) REFERENCES taxis(id)
+        );""")
+
+        # 2. DATOS INICIALES
+        datos_servicios = [(1, 'Viaje en base'), (2, 'Telefono base'), (3, 'Telefono unidad'), (4, 'Viaje aereo')]
+        cursor.executemany("INSERT OR IGNORE INTO cat_tipos_servicio (id, descripcion) VALUES (?, ?)", datos_servicios)
+
+        datos_bases = [
+            (1, 'Cessa'), (2, 'Licuor'), (3, 'Santiagito'), (4, 'Aurrera'),
+            (5, 'Mercado'), (6, 'Caros'), (7, 'Survi'), (8, 'Capulin'),
+            (9, 'Zocalo'), (10, '16 de septiembre'), (11, 'Parada principal'),
+            (12, 'Fuera de Servicio'), (13, 'En Viaje')
+        ]
+        cursor.executemany("INSERT OR IGNORE INTO cat_bases (id, nombre_base) VALUES (?, ?)", datos_bases)
+
+        # 3. TAXIS 35-100
+        taxis_nuevos = [(str(n), 'ACTIVO', 12) for n in range(35, 101)]
+        cursor.executemany("INSERT INTO taxis (numero_economico, estado_sistema, base_actual_id) VALUES (?, ?, ?)", taxis_nuevos)
+
+        conexion.commit()
+        conexion.close()
+        
+        # OCULTAR EL ARCHIVO RECIÉN CREADO
+        try:
+            ctypes.windll.kernel32.SetFileAttributesW(nombre_db, 0x02)
+        except:
+            pass
+            
+        return True
+        
+    except Exception as e:
+        QMessageBox.critical(None, "Error", f"No se pudo crear la base de datos:\n{e}")
+        return False
+
 
 
     
-   
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
-    # --- PANTALLA DE CARGA (SPLASH SCREEN) ---
-    # Usamos el logo PNG porque se ve mejor (el ICO es muy pequeño)
-    # Asegúrate de usar la función ruta_recurso si ya la implementaste, 
-    # o pon el nombre directo si estás probando en código.
+    # 1. ANTI-DOBLE APERTURA
+    from PyQt6.QtCore import QSharedMemory
+    uuid_app = "SistemaTaxisZorro_Unique_Key_v1"
+    shared_memory = QSharedMemory(uuid_app)
+    if not shared_memory.create(1):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Icon.Warning)
+        msg.setWindowTitle("Sistema Taxis El Zorro")
+        msg.setText("⚠️ El sistema ya se está ejecutando.")
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()
+        sys.exit(0)
+
+    # 2. VERIFICACIÓN / CREACIÓN DE BD (NUEVO)
+    # Hacemos esto ANTES del splash para que puedan responder el mensaje
+    if not verificar_y_crear_db():
+        sys.exit(0) # Si dijeron que NO, cerramos.
+
+    # 3. SPLASH SCREEN
     import os
+    from PyQt6.QtGui import QPixmap 
+    from PyQt6.QtWidgets import QSplashScreen 
+    import time
     
-    # Truco para encontrar el logo tanto en .py como en .exe
-    def ruta_recurso_simple(relativo):
+    def ruta_recurso(relativo):
         try:
             base_path = sys._MEIPASS
         except Exception:
             base_path = os.path.abspath(".")
         return os.path.join(base_path, relativo)
 
-    ruta_logo = ruta_recurso_simple("LogoElZorropng.png") # Usa el PNG grande
+    ruta_logo = ruta_recurso("LogoElZorropng.png") 
     
+    splash = None
     if os.path.exists(ruta_logo):
         pixmap = QPixmap(ruta_logo)
-        
-        # Opcional: Escalarlo si es GIGANTE (ej. limitarlo a 400x400)
         pixmap = pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-        
         splash = QSplashScreen(pixmap)
         splash.show()
-        
-        # Forzamos a que se pinte en pantalla
         app.processEvents()
-        
-        # (Opcional) Un pequeño sleep si carga demasiado rápido y quieres presumir el logo
-        # import time
-        # time.sleep(1.5) 
-    else:
-        splash = None
+        time.sleep(1.5)
 
-    # --- CARGA DE LA VENTANA PRINCIPAL ---
-    # Mientras el splash se muestra, aquí Python trabaja cargando la BD y la interfaz
+    # 4. INICIO APP
+    # Log de errores
+    def log_excepciones(type, value, tb):
+        import traceback
+        from datetime import datetime
+        texto_error = "".join(traceback.format_exception(type, value, tb))
+        with open("errores_crash.txt", "a", encoding="utf-8") as f:
+            f.write(f"\nERROR: {datetime.now()}\n{texto_error}\n---\n")
+        sys.__excepthook__(type, value, tb)
+    sys.excepthook = log_excepciones
+
     ventana = VentanaPrincipal()
     ventana.showMaximized()
 
-    # --- CERRAR SPLASH ---
     if splash:
-        splash.finish(ventana) # Cierra el splash cuando la ventana esté lista
+        splash.finish(ventana)
 
     sys.exit(app.exec())

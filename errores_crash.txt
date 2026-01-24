@@ -1,0 +1,11 @@
+
+
+--- ERROR REGISTRADO: 2026-01-24 12:37:53 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 38, in <module>
+    from reportes import GeneradorPDF
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\reportes.py", line 1, in <module>
+    from reportlab.lib import colors
+ModuleNotFoundError: No module named 'reportlab'
+
+----------------------------------
