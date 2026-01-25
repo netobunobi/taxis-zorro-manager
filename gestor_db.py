@@ -635,7 +635,7 @@ class GestorBaseDatos:
             print(f"Error registrando taxi: {e}")
             return False
         
-        
+
     def eliminar_taxi(self, taxi_id):
         try: 
             conn, cursor = self._conectar()
@@ -755,13 +755,61 @@ class GestorBaseDatos:
         except Exception as e:
             print(f"Error al cambiar estado taxi: {e}")
             return False
+        
+
+    # --- NUEVAS FUNCIONES PARA DERECHO DE PISO Y REPORTE UNIDAD ---
+
+    def generar_cargos_piso_masivos(self, monto=150.0):
         try:
-            conn = self._conectar()
-            cursor = conn.cursor()
-            cursor.execute("UPDATE taxis SET estado_sistema = ? WHERE id = ?", (nuevo_estado, taxi_id))
+            conn, c = self._conectar()
+            # 1. Obtenemos solo los taxis ACTIVOS
+            c.execute("SELECT id, numero_economico FROM taxis WHERE estado_sistema = 'ACTIVO'")
+            taxis_activos = c.fetchall()
+            
+            fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            count = 0
+            
+            # 2. Insertamos la deuda a cada uno
+            for t in taxis_activos:
+                # Usamos el tipo "Derecho de Piso" para identificarlo fácil
+                c.execute("""
+                    INSERT INTO incidencias (taxi_id, tipo, descripcion, monto, fecha_registro, resuelto, operador_id)
+                    VALUES (?, '💰 Derecho de Piso', 'Cuota quincenal operativa (Municipio/Base)', ?, ?, 'PENDIENTE', 'SISTEMA')
+                """, (t['id'], monto, fecha))
+                count += 1
+                
             conn.commit()
             conn.close()
-            return True
+            return count
         except Exception as e:
-            print(f"Error al cambiar estado taxi: {e}")
-            return False
+            print(f"Error generando cobros masivos: {e}")
+            return 0
+
+    def obtener_incidencias_por_unidad(self, taxi_id, periodo="SIEMPRE", fecha_ref=None):
+        # Esta función busca multas, reportes y cuotas de un solo taxi
+        try:
+            conn, c = self._conectar()
+            query = """
+                SELECT tipo, descripcion, monto, fecha_registro, resuelto 
+                FROM incidencias 
+                WHERE taxi_id = ?
+            """
+            params = [taxi_id]
+            
+            # Filtro de fecha (igual que en los viajes)
+            if periodo == "DIA":
+                query += " AND date(fecha_registro) = ?"
+                params.append(fecha_ref)
+            elif periodo == "MES":
+                query += " AND strftime('%Y-%m', fecha_registro) = ?"
+                params.append(fecha_ref[:7]) # YYYY-MM
+                
+            query += " ORDER BY fecha_registro DESC"
+            
+            c.execute(query, params)
+            datos = c.fetchall()
+            conn.close()
+            return datos
+        except Exception as e:
+            print(f"Error obteniendo incidencias unidad: {e}")
+            return []

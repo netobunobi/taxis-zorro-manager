@@ -284,7 +284,8 @@ class GeneradorPDF:
         return self._finalizar_reporte()
 
     # --- REPORTE INDIVIDUAL (ESTILOS ARREGLADOS) ---
-    def generar_reporte_unidad(self, numero, texto_fecha, stats, lista_viajes):
+    # Nota: Agregamos el nuevo parámetro 'lista_incidencias=None' al final
+    def generar_reporte_unidad(self, numero, texto_fecha, stats, lista_viajes, lista_incidencias=None):
         # 1. LOGO
         nombre_logo = ruta_recurso("LogoElZorropng.png")
         if not os.path.exists(nombre_logo): nombre_logo = ruta_recurso("LogoElZorropng.jpg")
@@ -331,20 +332,16 @@ class GeneradorPDF:
         self.elementos.append(t_res)
         self.elementos.append(Spacer(1, 25))
 
-        # 4. LISTA VIAJES (Aquí está el cambio de alineación)
-        
-        # Creamos un estilo específico para celdas de texto a la izquierda
+        # 4. LISTA VIAJES
         estilo_celda_izq = ParagraphStyle('CeldaIzq', parent=self.estilos['Normal'], fontSize=10, alignment=TA_LEFT)
 
         dat = [["HORA", "ORIGEN", "DESTINO", "COSTO"]]
         for v in lista_viajes:
             hora = str(v['fecha']).split(" ")[1][:5] if " " in str(v['fecha']) else str(v['fecha'])
-            
-            # Usamos el nuevo estilo 'estilo_celda_izq' en DESTINO
             dat.append([
                 hora, 
                 str(v.get('origen',''))[:20], 
-                Paragraph(str(v.get('destino','')), estilo_celda_izq), # <--- AQUÍ SE FORZA LA IZQUIERDA
+                Paragraph(str(v.get('destino','')), estilo_celda_izq),
                 f"${v['precio']:,.2f}"
             ])
         
@@ -352,15 +349,103 @@ class GeneradorPDF:
         t_det.setStyle(TableStyle([
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), 
             ('LINEBELOW', (0,0), (-1,0), 1, colors.HexColor("#CBD5E1")),
-            ('ALIGN', (0,0), (-1,-1), 'LEFT'),  # Todo a la izquierda por defecto
-            ('ALIGN', (0,0), (0,-1), 'CENTER'), # Solo Hora centrada
-            ('ALIGN', (-1,0), (-1,-1), 'RIGHT'),# Precio a la derecha
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),  
+            ('ALIGN', (0,0), (0,-1), 'CENTER'), 
+            ('ALIGN', (-1,0), (-1,-1), 'RIGHT'),
             ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")])
         ]))
         self.elementos.append(t_det)
+
+        # ==========================================================
+        # 5. NUEVA SECCIÓN: HISTORIAL DE PAGOS Y SANCIONES (AGREGADA AQUÍ)
+        # ==========================================================
+        if lista_incidencias and len(lista_incidencias) > 0:
+            self.elementos.append(Spacer(1, 30))
+            
+            # Título de la sección roja
+            estilo_sub_rojo = ParagraphStyle('SubRojo', parent=self.estilos['Heading2'], fontSize=12, textColor=colors.HexColor("#EF4444"), spaceAfter=5)
+            self.elementos.append(Paragraph("HISTORIAL DE PAGOS Y ADEUDOS", estilo_sub_rojo))
+            
+            # Encabezados
+            head_inc = ["FECHA", "CONCEPTO", "ESTADO", "MONTO"]
+            data_inc = [head_inc]
+            
+            total_deuda_periodo = 0.0
+            
+            for inc in lista_incidencias:
+                # Recuperamos los datos (Tupla o Diccionario según venga de la BD)
+                # Protegemos el acceso por si viene como tupla o dict
+                try:
+                    tipo = inc['tipo']; desc = inc['descripcion']; monto = inc['monto']
+                    fecha = str(inc['fecha_registro'])[:10]; estado = inc['resuelto']
+                except:
+                    # Fallback si viene como tupla simple (índices)
+                    tipo = inc[0]; desc = inc[1]; monto = inc[2]
+                    fecha = str(inc[3])[:10]; estado = inc[4]
+                
+                # Calcular deuda pendiente
+                if estado == "PENDIENTE":
+                    total_deuda_periodo += monto
+
+                # Descripción corta para la tabla
+                desc_show = desc[:45] + "..." if len(desc)>45 else desc
+                concepto_full = f"<b>{tipo}</b><br/>{desc_show}"
+                
+                data_inc.append([
+                    fecha,
+                    Paragraph(concepto_full, self.estilo_normal),
+                    estado,
+                    f"${monto:,.2f}"
+                ])
+
+            # Tabla Incidencias (Estilo Rojo para diferenciar)
+            t_inc = Table(data_inc, colWidths=[1.2*inch, 3.5*inch, 1.3*inch, 1*inch])
+            
+            t_inc.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#EF4444")), # Encabezado ROJO
+                ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+                ('ALIGN', (-1,0), (-1,-1), 'RIGHT'), # Monto a la derecha
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                ('PADDING', (0,0), (-1,-1), 6),
+            ]))
+            
+            # Colorear los PENDIENTES
+            for i, row in enumerate(data_inc[1:]): 
+                estado_row = row[2] 
+                if estado_row == "PENDIENTE":
+                    t_inc.setStyle(TableStyle([
+                        ('TEXTCOLOR', (2, i+1), (2, i+1), colors.red), 
+                        ('FONTNAME', (2, i+1), (2, i+1), 'Helvetica-Bold'),
+                    ]))
+                else:
+                    t_inc.setStyle(TableStyle([
+                        ('TEXTCOLOR', (2, i+1), (2, i+1), colors.green), 
+                    ]))
+
+            self.elementos.append(t_inc)
+            
+            # Total Deuda
+            if total_deuda_periodo > 0:
+                self.elementos.append(Spacer(1, 10))
+                p_deuda = Paragraph(f"<b>ADEUDO PENDIENTE: ${total_deuda_periodo:,.2f}</b>", 
+                                    ParagraphStyle('Alerta', parent=self.estilos['Normal'], textColor=colors.red, alignment=TA_RIGHT, fontSize=12))
+                self.elementos.append(p_deuda)
+        # ==========================================================
+
+        # 6. PIE DE PÁGINA Y CIERRE
+        self.elementos.append(Spacer(1, 40))
+        
+        # Obtenemos fecha actual para el pie
+        fecha_consulta = datetime.now().strftime("%d/%m/%Y %H:%M")
+        estilo_pie = ParagraphStyle('Pie', parent=self.estilos['Normal'], fontSize=8, alignment=TA_RIGHT, textColor=colors.HexColor("#94A3B8"))
+        self.elementos.append(Paragraph(f"Documento consultado el: {fecha_consulta}", estilo_pie))
         
         return self._finalizar_reporte()
     
+
     
     def generar_ticket_incidencia(self, taxi, tipo, descripcion, monto, operadora, fecha_personalizada=None):
         if fecha_personalizada: fecha_texto = fecha_personalizada; titulo = f"COPIA REPORTE - TAXI {taxi}"

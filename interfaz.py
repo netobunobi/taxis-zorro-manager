@@ -1205,6 +1205,10 @@ class VentanaPrincipal(QMainWindow):
         datos = self.db.obtener_viajes_por_unidad_y_periodo(taxi_id, periodo_bd, fecha_ref=fecha_str)
         stats = self.db.obtener_estadisticas_unidad(taxi_id, periodo_bd, fecha_ref=fecha_str)
 
+        # --- NUEVO: OBTENER INCIDENCIAS/PAGOS ---
+        lista_incidencias = self.db.obtener_incidencias_por_unidad(taxi_id, periodo_bd, fecha_ref=fecha_str)
+        # ----------------------------------------
+
         # Validación: Si no hay nada, avisamos
         if not datos and stats['viajes'] == 0:
             QMessageBox.warning(self, "Sin datos", "No hay viajes registrados para este periodo.")
@@ -1216,7 +1220,7 @@ class VentanaPrincipal(QMainWindow):
             gen = GeneradorPDF(nombre_pdf)
             
             # Usamos la función BONITA que diseñamos
-            ruta_final = gen.generar_reporte_unidad(taxi_num, texto_fecha, stats, datos)
+            ruta_final = gen.generar_reporte_unidad(taxi_num, texto_fecha, stats, datos, lista_incidencias)
             
             # 5. Abrir automáticamente
             if ruta_final:
@@ -1290,7 +1294,22 @@ class VentanaPrincipal(QMainWindow):
         lf.addWidget(QLabel("Detalles / Observaciones:", styleSheet=estilo_lbl)); lf.addWidget(self.txt_desc_reporte)
         lf.addWidget(QLabel("Monto a Cobrar ($):", styleSheet=estilo_lbl)); lf.addWidget(self.txt_monto_multa)
         lf.addWidget(QLabel("Firma Operadora:", styleSheet=estilo_lbl)); lf.addWidget(self.txt_operadora)
-        lf.addSpacing(10); lf.addWidget(btn_guardar); lf.addStretch()
+        lf.addSpacing(10)
+        lf.addWidget(btn_guardar)
+
+        # LÍNEA DIVISORIA VISUAL
+        linea = QFrame(); linea.setFrameShape(QFrame.Shape.HLine); linea.setStyleSheet("color: #334155;")
+        lf.addWidget(linea); lf.addSpacing(10)
+        
+        lf.addWidget(QLabel("📅 COBROS ADMINISTRATIVOS", styleSheet="color: #FACC15; font-weight:bold; font-size:14px;"))
+        
+        btn_piso = QPushButton("💰 Generar Cobro Quincenal ($150)")
+        btn_piso.setStyleSheet("background-color: #3B82F6; color: white; font-weight: bold; padding: 10px; border-radius: 5px;")
+        btn_piso.clicked.connect(self.ejecutar_cobro_masivo_piso)
+        lf.addWidget(btn_piso)
+
+
+        lf.addStretch()
         
         # --- LADO DERECHO: PESTAÑAS ---
         frame_list = QFrame()
@@ -1398,6 +1417,22 @@ class VentanaPrincipal(QMainWindow):
             self.txt_desc_reporte.clear(); self.txt_monto_multa.setText("0")
             self.cargar_tabla_deudas() # Recarga ambas pestañas
 
+    def ejecutar_cobro_masivo_piso(self):
+        # Pregunta de seguridad
+        resp = QMessageBox.question(self, "Confirmar Cargo Masivo", 
+                                    "¿Estás segura de que quieres cobrar $150 a TODOS los taxis activos?\n\nEsto generará una deuda a cada uno.",
+                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        if resp == QMessageBox.StandardButton.Yes:
+            cantidad = self.db.generar_cargos_piso_masivos(150.0)
+            if cantidad > 0:
+                QMessageBox.information(self, "Listo", f"Se aplicó el cargo a {cantidad} unidades activas.")
+                self.cargar_tabla_deudas() # Refrescar la lista
+            else:
+                QMessageBox.warning(self, "Aviso", "No se generaron cargos (¿No hay taxis activos?).")
+
+
+
     def auto_llenar_descripcion_incidencia(self, texto):
         descripciones = {
             "🛑 Multa Horas": "Incumplimiento de jornada laboral mínima (10 horas).",
@@ -1417,42 +1452,63 @@ class VentanaPrincipal(QMainWindow):
         self.tabla_deudas.setRowCount(0)
         self.tabla_morales.setRowCount(0)
         
-        # Ajustamos columnas para que quepa el botón PDF
-        # Tabla Deudas: ID, TAXI, TIPO, MONTO, OPER, COBRAR, PDF
-        self.tabla_deudas.setColumnCount(7) 
-        self.tabla_deudas.setHorizontalHeaderLabels(["ID", "TAXI", "TIPO", "MONTO", "OPER", "COBRAR", "PDF"])
+        # Ajustamos columnas (AHORA SON 8 en DEUDAS para incluir ATRASO)
+        self.tabla_deudas.setColumnCount(8) 
+        self.tabla_deudas.setHorizontalHeaderLabels(["ID", "TAXI", "TIPO", "MONTO", "OPER", "ATRASO", "COBRAR", "PDF"])
         self.tabla_deudas.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         
         # Tabla Morales: ID, TAXI, TIPO, DETALLES, FECHA, PDF
         self.tabla_morales.setColumnCount(6)
         self.tabla_morales.setHorizontalHeaderLabels(["ID", "TAXI", "TIPO", "DETALLES", "FECHA", "PDF"])
         self.tabla_morales.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        
         self.tabla_morales.setColumnHidden(0, True) # Ocultar ID
         self.tabla_deudas.setColumnHidden(0, True)  # Ocultar ID
 
         # Obtenemos datos
         pendientes = self.db.obtener_incidencias_pendientes() 
         
+        # --- AQUÍ DEFINIMOS 'HOY' PARA QUE NO TE DE ERROR ---
+        hoy = datetime.now()
+
         for p in pendientes:
             try: monto = float(p['monto'])
             except: monto = 0.0
             
-            # Recuperamos datos clave para el PDF
+            # Recuperamos datos clave
             taxi = str(p['numero_economico'])
             tipo = p['tipo']
             desc = p['descripcion']
-            oper = p['operador_id'] # NOMBRE DE LA OPERADORA
-            fecha = str(p['fecha_registro'])
+            oper = p['operador_id']
+            fecha_str = str(p['fecha_registro']) # Viene como string de BD
+
+            # === CÁLCULO DE DÍAS DE ATRASO ===
+            try:
+                # Convertimos el texto de la BD a fecha real
+                fecha_reg = datetime.strptime(fecha_str, "%Y-%m-%d %H:%M:%S")
+                dias_atraso = (hoy - fecha_reg).days
+            except:
+                dias_atraso = 0
+
+            # Lógica visual del atraso
+            txt_atraso = "Al día"
+            color_atraso = "white" # Por defecto blanco
+            
+            if dias_atraso > 0:
+                txt_atraso = f"{dias_atraso} días"
+                if dias_atraso > 3: color_atraso = "#FACC15" # Amarillo > 3 días
+                if dias_atraso > 15: color_atraso = "#EF4444" # Rojo > 15 días (Una quincena)
 
             # === BOTÓN PDF (Común para ambos) ===
             btn_pdf = QPushButton("📄 PDF")
             btn_pdf.setStyleSheet("background-color: #EF4444; color: white; font-weight: bold; border-radius: 4px;")
-            # Usamos lambda para pasar TODOS los datos necesarios al generador
-            btn_pdf.clicked.connect(lambda _, t=taxi, ti=tipo, d=desc, m=monto, o=oper, f=fecha: self.reimprimir_ticket(t, ti, d, m, o, f))
+            btn_pdf.clicked.connect(lambda _, t=taxi, ti=tipo, d=desc, m=monto, o=oper, f=fecha_str: self.reimprimir_ticket(t, ti, d, m, o, f))
 
             # === TABLA 1: DINERO ($$$) ===
             if monto > 0:
                 r = self.tabla_deudas.rowCount(); self.tabla_deudas.insertRow(r)
+                
+                # Columnas 0-4: Datos normales
                 self.tabla_deudas.setItem(r, 0, QTableWidgetItem(str(p['id'])))
                 self.tabla_deudas.setItem(r, 1, QTableWidgetItem(taxi))
                 self.tabla_deudas.setItem(r, 2, QTableWidgetItem(tipo))
@@ -1463,11 +1519,20 @@ class VentanaPrincipal(QMainWindow):
                 
                 self.tabla_deudas.setItem(r, 4, QTableWidgetItem(oper))
                 
+                # Columna 5: ATRASO (NUEVO)
+                it_atraso = QTableWidgetItem(txt_atraso)
+                it_atraso.setForeground(QColor(color_atraso))
+                it_atraso.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.tabla_deudas.setItem(r, 5, it_atraso)
+
+                # Columna 6: COBRAR
                 btn_pagar = QPushButton("💵 COBRAR")
                 btn_pagar.setStyleSheet("background-color: #10B981; color: white; font-weight: bold;")
                 btn_pagar.clicked.connect(lambda _, x=p['id']: self.cobrar_deuda(x))
-                self.tabla_deudas.setCellWidget(r, 5, btn_pagar)
-                self.tabla_deudas.setCellWidget(r, 6, btn_pdf) # Botón PDF
+                self.tabla_deudas.setCellWidget(r, 6, btn_pagar)
+                
+                # Columna 7: PDF
+                self.tabla_deudas.setCellWidget(r, 7, btn_pdf)
             
             # === TABLA 2: DISCIPLINA ($0) ===
             else:
@@ -1481,9 +1546,8 @@ class VentanaPrincipal(QMainWindow):
                 self.tabla_morales.setItem(r, 2, QTableWidgetItem(t_show))
                 
                 self.tabla_morales.setItem(r, 3, QTableWidgetItem(desc))
-                self.tabla_morales.setItem(r, 4, QTableWidgetItem(fecha[:16])) # Fecha Corta
-                self.tabla_morales.setCellWidget(r, 5, btn_pdf) # Botón PDF
-                
+                self.tabla_morales.setItem(r, 4, QTableWidgetItem(fecha_str[:16])) 
+                self.tabla_morales.setCellWidget(r, 5, btn_pdf)           
 
     def cobrar_deuda(self, id_incidencia):
         if QMessageBox.question(self, "Cobrar", "¿Confirmar que se recibió el pago?", QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
@@ -1755,6 +1819,16 @@ def verificar_y_crear_db():
         # 3. DATOS INICIALES (Solo si está vacío)
         c.executemany("INSERT OR IGNORE INTO cat_tipos_servicio (id, descripcion) VALUES (?, ?)", [(1,'Viaje en base'),(2,'Telefono base'),(3,'Telefono unidad'),(4,'Viaje aereo')])
         c.executemany("INSERT OR IGNORE INTO cat_bases (id, nombre_base) VALUES (?, ?)", [(1,'Cessa'),(2,'Licuor'),(3,'Santiagito'),(4,'Aurrera'),(5,'Mercado'),(6,'Caros'),(7,'Survi'),(8,'Capulin'),(9,'Zocalo'),(10,'16 de septiembre'),(11,'Parada principal'),(12,'Fuera de Servicio'),(13,'En Viaje'), (90, 'Taller'), (91, 'Descanso'), (92, 'Foráneo'), (93, 'Local')])
+
+        fecha_hoy = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for i in range(35, 101):
+            num_taxi = str(i)
+            # INSERT OR IGNORE evita errores si el taxi ya existe
+            c.execute("""
+                INSERT OR IGNORE INTO taxis 
+                (numero_economico, estado_sistema, base_actual_id, fecha_alta, fecha_movimiento) 
+                VALUES (?, 'ACTIVO', 12, ?, ?)
+            """, (num_taxi, fecha_hoy, fecha_hoy))
         
         # 4. === AUTO-REPARACIÓN (MIGRACIÓN) ===
         # Revisamos qué columnas tiene la tabla 'taxis' actualmente
