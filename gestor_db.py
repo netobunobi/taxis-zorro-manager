@@ -606,13 +606,35 @@ class GestorBaseDatos:
         return taxis[(int(datetime.now().strftime("%j")) - 1) % len(taxis)]['numero_economico']
 
     # Métodos de compatibilidad
-    def registrar_nuevo_taxi(self, numero, base=12):
-        try: 
+    def registrar_nuevo_taxi(self, numero_economico, id_base_inicial=12):
+        try:
             conn, cursor = self._conectar()
-            cursor.execute("INSERT INTO taxis (numero_economico, base_actual_id) VALUES (?,?)", (numero, base))
-            conn.commit(); conn.close()
+            
+            # === EL SEGURO ANTI-DUPLICADOS ===
+            cursor.execute("SELECT id FROM taxis WHERE numero_economico = ?", (numero_economico,))
+            if cursor.fetchone():
+                print(f"ALERTA: El taxi {numero_economico} ya existe. No se duplicará.")
+                conn.close()
+                return False # Devuelve Falso para avisar que no se pudo
+            # =================================
+
+            # Si no existe, procedemos a crearlo
+            fecha_alta = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            cursor.execute("""
+                INSERT INTO taxis (numero_economico, estado_sistema, fecha_alta, base_actual_id, fecha_movimiento)
+                VALUES (?, 'ACTIVO', ?, ?, ?)
+            """, (numero_economico, fecha_alta, id_base_inicial, fecha_alta))
+            
+            conn.commit()
+            conn.close()
+            print(f"Taxi {numero_economico} registrado correctamente.")
             return True
-        except: return False
+            
+        except Exception as e:
+            print(f"Error registrando taxi: {e}")
+            return False
+        
         
     def eliminar_taxi(self, taxi_id):
         try: 
@@ -720,3 +742,26 @@ class GestorBaseDatos:
             "top_horas": top_horas,
             "grafica_servicios": datos_grafica
         }
+    
+    def cambiar_estado_taxi(self, taxi_id, nuevo_estado):
+        try:
+            # CORRECCIÓN: Recibimos conn Y cursor separados por coma
+            conn, cursor = self._conectar() 
+            
+            cursor.execute("UPDATE taxis SET estado_sistema = ? WHERE id = ?", (nuevo_estado, taxi_id))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"Error al cambiar estado taxi: {e}")
+            return False
+        try:
+            conn = self._conectar()
+            cursor = conn.cursor()
+            cursor.execute("UPDATE taxis SET estado_sistema = ? WHERE id = ?", (nuevo_estado, taxi_id))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"Error al cambiar estado taxi: {e}")
+            return False

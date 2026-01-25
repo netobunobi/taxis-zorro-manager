@@ -7,7 +7,6 @@ from reportlab.lib.units import inch
 from reportlab.lib.pdfencrypt import StandardEncryption
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.piecharts import Pie
-from reportlab.graphics.charts.legends import Legend
 from datetime import datetime
 import os
 import sys
@@ -39,7 +38,7 @@ class GeneradorPDF:
         self.elementos = []
         self.estilos = getSampleStyleSheet()
         
-        # Estilos personalizados
+        # Estilos personalizados (Diseño Profesional)
         self.estilo_titulo = ParagraphStyle(name="Titulo", parent=self.estilos['Heading1'], alignment=TA_CENTER, fontSize=20, textColor=colors.HexColor("#0F172A"), spaceAfter=15)
         self.estilo_sub = ParagraphStyle(name="Subtitulo", parent=self.estilos['Heading2'], alignment=TA_LEFT, fontSize=12, textColor=colors.HexColor("#64748B"), spaceAfter=5)
         self.estilo_normal = ParagraphStyle(name="NormalC", parent=self.estilos['Normal'], alignment=TA_CENTER, fontSize=10)
@@ -51,23 +50,39 @@ class GeneradorPDF:
     def _finalizar_reporte(self):
         try:
             self.doc.build(self.elementos)
+            return self.nombre_archivo
         except Exception as e:
             print(f"Error al generar PDF: {e}")
+            return None
 
     def _agregar_encabezado(self, titulo_reporte, subtitulo):
         logo = []
-        nombre_logo = ruta_recurso("LogoElZorropng.png") 
+        # BÚSQUEDA ROBUSTA DEL LOGO (PNG o JPG)
+        nombre_logo = ruta_recurso("LogoElZorropng.png")
+        if not os.path.exists(nombre_logo):
+            nombre_logo = ruta_recurso("LogoElZorropng.jpg")
+
         if os.path.exists(nombre_logo):
-            img = Image(nombre_logo, width=1.2*inch, height=1.2*inch)
+            img = Image(nombre_logo, width=1.3*inch, height=1.3*inch)
             img.hAlign = 'RIGHT'
             img.preserveAspectRatio = True 
             logo = img
+        else:
+            # Si no hay logo, poner un espacio vacío para que no falle
+            logo = Paragraph("", self.estilo_normal)
         
+        # Tabla encabezado: Texto Izquierda | Logo Derecha
         t_head = Table([[[Paragraph("<b>TAXIS EL ZORRO</b>", self.estilo_empresa), 
-                          Paragraph("Sistema de Gestión", self.estilo_programa)], logo]], 
+                          Paragraph("Sistema Integral de Gestión", self.estilo_programa)], logo]], 
                         colWidths=[400, 150])
-        t_head.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'LEFT'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
+        t_head.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'), 
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN', (1,0), (1,0), 'RIGHT') # Logo a la derecha
+        ]))
         self.elementos.append(t_head)
+        
+        # Línea Dorada
         self.elementos.append(Table([[""]], colWidths=[550], style=[('LINEBELOW', (0,0), (-1,-1), 2, colors.HexColor("#FACC15"))])) 
         self.elementos.append(Spacer(1, 10)) 
 
@@ -75,33 +90,40 @@ class GeneradorPDF:
         self.elementos.append(Paragraph(subtitulo, self.estilo_periodo))
         
         fecha_gen = datetime.now().strftime('%d/%m/%Y %H:%M')
-        self.elementos.append(Paragraph(f"Reporte generado el: {fecha_gen}", self.estilo_fecha_gen))
+        self.elementos.append(Paragraph(f"Generado el: {fecha_gen}", self.estilo_fecha_gen))
         self.elementos.append(Spacer(1, 15))
 
     def generar_reporte_dual(self, tipo_reporte, periodo, fecha_texto, datos_generales, datos_admin=None, password=None):
         if password and tipo_reporte == "ADMIN":
             self.doc.encrypt = StandardEncryption(password, canPrint=1, canCopy=0, canModify=0)
 
-        titulo = "INFORME OPERATIVO" if tipo_reporte == "PUBLICO" else "REPORTE GERENCIAL Y FINANCIERO"
+        titulo = "REPORTE OPERATIVO DIARIO" if tipo_reporte == "PUBLICO" else "REPORTE GERENCIAL COMPLETO"
         self._agregar_encabezado(titulo, f"Periodo: {periodo} | {fecha_texto}")
 
         # --- EXTRACCIÓN DE DATOS ---
         totales = datos_generales['totales']
         servicios = datos_generales['servicios'] 
         incidencias = datos_generales['incidencias']
+        lista_flota = datos_generales.get('detalle_flota', [])
+
+        # CALCULAR AUSENCIAS ESPECÍFICAS
+        # Buscamos en el desglose cuántas incidencias contienen la palabra "Ausencia" o "Falta"
+        total_ausencias = 0
+        for tipo, cant, _ in incidencias.get('desglose', []):
+            if "Ausencia" in tipo or "Falta" in tipo or "Ausentismo" in tipo:
+                total_ausencias += cant
 
         # ==========================================================
-        # 1. TABLA DE MÉTRICAS OPERATIVAS (LO QUE PEDISTE CONSERVAR)
+        # 1. TABLA RESUMEN GENERAL (INCLUYE AUSENCIAS AHORA)
         # ==========================================================
-        self.elementos.append(Paragraph("RESUMEN DE OPERACIONES", self.estilo_sub))
-        
         d_ops = [
-            ["INDICADOR", "CANTIDAD"],
-            ["Total de Viajes Realizados", str(totales['viajes'])],
-            ["Servicios de Base (Sitio)", str(servicios.get(1,0))],
-            ["Servicios por Teléfono", str(servicios.get(2,0) + servicios.get(3,0))],
-            ["Servicios Aéreos / Calle", str(servicios.get(4,0))],
-            ["TOTAL INCIDENCIAS REGISTRADAS", str(incidencias['total_count'])]
+            ["METRICAS GLOBALES", "CANTIDAD"],
+            ["Viajes Totales Realizados", str(totales['viajes'])],
+            ["Servicios de Base", str(servicios.get(1,0))],
+            ["Servicios Teléfono", str(servicios.get(2,0) + servicios.get(3,0))],
+            ["Total Incidencias", str(incidencias['total_count'])],
+            # --- NUEVA FILA SOLICITADA ---
+            ["AUSENCIAS / FALTAS", str(total_ausencias)] 
         ]
         
         t_ops = Table(d_ops, colWidths=[4*inch, 2*inch])
@@ -109,24 +131,70 @@ class GeneradorPDF:
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1E293B")),
             ('TEXTCOLOR', (0,0), (-1,0), colors.white),
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
             ('ALIGN', (1,0), (-1,-1), 'CENTER'),
             ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-            # Fila de incidencias en amarillo suave
-            ('BACKGROUND', (0,5), (-1,5), colors.HexColor("#FFF7ED")),
+            # Resaltar la fila de Ausencias en Rojo suave si hay faltas
+            ('BACKGROUND', (0,5), (-1,5), colors.HexColor("#FECACA") if total_ausencias > 0 else colors.white),
+            ('TEXTCOLOR', (0,5), (-1,5), colors.red if total_ausencias > 0 else colors.black),
             ('FONTNAME', (0,5), (-1,5), 'Helvetica-Bold'),
         ]))
-        t_ops.hAlign = 'CENTER'
         self.elementos.append(t_ops)
         self.elementos.append(Spacer(1, 15))
 
         # ==========================================================
-        # 2. DESGLOSE DE INCIDENCIAS (SI HAY)
+        # 2. SÁBANA DE LA FLOTA (AHORA EN PUBLICO Y ADMIN)
+        # ==========================================================
+        if lista_flota:
+            self.elementos.append(Paragraph("RESUMEN DE ACTIVIDAD POR UNIDAD", self.estilo_sub))
+            
+            # Encabezados
+            head_flota = ["TAXI", "VIAJES", "HORAS", "INGRESOS"]
+            data_flota = [head_flota]
+            
+            # Ordenamos por número de taxi
+            lista_flota.sort(key=lambda x: int(x['numero']))
+
+            for taxi in lista_flota:
+                data_flota.append([
+                    f"Unidad {taxi['numero']}",
+                    str(taxi['viajes']),
+                    f"{taxi['horas']:.1f} h",
+                    f"${taxi['dinero']:,.2f}"
+                ])
+
+            t_flota = Table(data_flota, colWidths=[1.5*inch, 1*inch, 1.2*inch, 1.5*inch])
+            
+            estilo_flota = [
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0F172A")),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('ALIGN', (1,0), (-1,-1), 'CENTER'),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")])
+            ]
+
+            # ALERTAS VISUALES (Rojo si trabajó menos de 8 horas)
+            for i, taxi in enumerate(lista_flota):
+                fila_idx = i + 1 
+                if taxi['horas'] < 8.0:
+                    estilo_flota.append(('BACKGROUND', (2, fila_idx), (2, fila_idx), colors.HexColor("#FECACA")))
+                    estilo_flota.append(('TEXTCOLOR', (2, fila_idx), (2, fila_idx), colors.red))
+                if taxi['viajes'] == 0:
+                     estilo_flota.append(('TEXTCOLOR', (1, fila_idx), (1, fila_idx), colors.grey))
+
+            t_flota.setStyle(TableStyle(estilo_flota))
+            self.elementos.append(t_flota)
+            self.elementos.append(Paragraph("* Celdas rojas indican jornada incompleta (< 8h).", self.estilo_programa))
+            self.elementos.append(Spacer(1, 20))
+
+
+        # ==========================================================
+        # 3. INCIDENCIAS DETALLADAS
         # ==========================================================
         if incidencias['total_count'] > 0:
-            self.elementos.append(Paragraph("DETALLE DE DISCIPLINA", self.estilo_sub))
+            self.elementos.append(Paragraph("DETALLE DE INCIDENCIAS / DISCIPLINA", self.estilo_sub))
             head_inc = ["TIPO", "CANTIDAD"]
-            if tipo_reporte == "ADMIN": head_inc.append("MULTAS ($)")
+            if tipo_reporte == "ADMIN": head_inc.append("MONTO ($)")
             
             d_inc = [head_inc]
             for tipo, cant, lana in incidencias['desglose']:
@@ -134,197 +202,173 @@ class GeneradorPDF:
                 if tipo_reporte == "ADMIN": row.append(f"${lana:,.2f}")
                 d_inc.append(row)
             
-            anchos = [4*inch, 2*inch] if tipo_reporte == "PUBLICO" else [3*inch, 1.5*inch, 1.5*inch]
+            anchos = [3*inch, 1.5*inch]
+            if tipo_reporte == "ADMIN": anchos.append(1.5*inch)
+
             t_inc = Table(d_inc, colWidths=anchos)
             t_inc.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#64748B")),
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#EF4444")),
                 ('TEXTCOLOR', (0,0), (-1,0), colors.white),
                 ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
                 ('ALIGN', (1,0), (-1,-1), 'CENTER'),
                 ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
             ]))
-            t_inc.hAlign = 'CENTER'
             self.elementos.append(t_inc)
             self.elementos.append(Spacer(1, 20))
 
-
         # ==========================================================
-        # 3. SECCIÓN ADMINISTRATIVA (SOLO ADMIN)
+        # 4. EXCLUSIVO ADMIN (GRÁFICAS Y TOPs)
         # ==========================================================
         if tipo_reporte == "ADMIN" and datos_admin:
-            self.elementos.append(Paragraph("ANÁLISIS DE RENDIMIENTO", self.estilo_titulo))
-            self.elementos.append(Spacer(1, 5))
+            self.elementos.append(Paragraph("ANÁLISIS ESTADÍSTICO (Privado)", self.estilo_titulo))
+            self.elementos.append(Spacer(1, 10))
 
-            # --- A. GRÁFICA DE PASTEL (Si hay datos) ---
-            # Solo se dibuja si hay viajes registrados
-            raw_graf = datos_admin['grafica_servicios']
+            # Gráfica Pastel
+            raw_graf = datos_admin.get('grafica_servicios', [])
             if raw_graf:
                 self.elementos.append(Paragraph("Distribución de Servicios:", self.estilo_sub))
-                data_pie = []
-                labels_pie = []
+                data_pie, labels_pie = [], []
                 for desc, cant in raw_graf:
                     data_pie.append(cant)
-                    labels_pie.append(f"{desc} ({cant})")
+                    labels_pie.append(f"{desc}")
                 
-                d = Drawing(400, 150) # Altura reducida
-                pc = Pie()
-                pc.x = 125
-                pc.y = 10
-                pc.width = 130 # Más grande
-                pc.height = 130
-                pc.data = data_pie
-                pc.labels = labels_pie
-                pc.sideLabels = 1
-                pc.slices.strokeWidth = 0.5
+                d = Drawing(400, 150)
+                pc = Pie(); pc.x = 100; pc.y = 10; pc.width = 130; pc.height = 130
+                pc.data = data_pie; pc.labels = labels_pie; pc.sideLabels = 1
                 colores = [colors.HexColor("#00D1FF"), colors.HexColor("#10B981"), colors.HexColor("#FACC15"), colors.HexColor("#F87171")]
-                for i in range(len(data_pie)):
-                    pc.slices[i].fillColor = colores[i % len(colores)]
+                for i in range(len(data_pie)): pc.slices[i].fillColor = colores[i % len(colores)]
                 d.add(pc)
                 self.elementos.append(d)
                 self.elementos.append(Spacer(1, 15))
-            else:
-                self.elementos.append(Paragraph("(Gráfica no disponible: Sin viajes registrados)", self.estilo_programa))
-                self.elementos.append(Spacer(1, 15))
 
-
-            # --- B. TABLAS DE MEJORES CHOFERES ---
-            
-            # Función interna para dibujar tablas sin emojis
+            # Tablas TOP
             def crear_tabla_top(titulo, lista_datos, es_por_horas=False):
                 self.elementos.append(Paragraph(titulo, self.estilo_sub))
-                head = ["POS", "UNIDAD", "HORAS" if es_por_horas else "VIAJES", "DINERO", "REPORTES"]
+                head = ["POS", "UNIDAD", "HORAS" if es_por_horas else "VIAJES", "DINERO"]
                 data = [head]
-                
                 for i, x in enumerate(lista_datos):
-                    val_principal = f"{x['horas']:.1f} h" if es_por_horas else str(x['viajes'])
-                    data.append([
-                        f"#{i+1}",
-                        f"Taxi {x['numero']}",
-                        val_principal,
-                        f"${x['dinero']:,.2f}",
-                        str(x['reportes'])
-                    ])
+                    val = f"{x['horas']:.1f} h" if es_por_horas else str(x['viajes'])
+                    data.append([f"#{i+1}", f"Taxi {x['numero']}", val, f"${x['dinero']:,.2f}"])
                 
-                if len(data) == 1: # Si no hay datos
-                    data.append(["-", "-", "-", "-", "-"])
-
-                t = Table(data, colWidths=[0.7*inch, 1.2*inch, 1.2*inch, 1.5*inch, 1*inch])
+                if len(data) == 1: data.append(["-", "-", "-", "-"])
+                t = Table(data, colWidths=[0.7*inch, 1.2*inch, 1.2*inch, 1.5*inch])
                 t.setStyle(TableStyle([
-                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1E293B")),
+                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#334155")),
                     ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-                    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                     ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                    ('FONTNAME', (4,1), (-1,-1), 'Helvetica-Bold'), # Columna Reportes negrita
+                    ('ALIGN', (0,0), (-1,-1), 'CENTER')
                 ]))
-                
-                # Pintar de ROJO si hay reportes > 0 (Empezamos desde fila 1)
-                for row_idx, row_data in enumerate(lista_datos):
-                    if row_data['reportes'] > 0:
-                        t.setStyle(TableStyle([
-                            ('TEXTCOLOR', (4, row_idx+1), (4, row_idx+1), colors.red),
-                            ('BACKGROUND', (4, row_idx+1), (4, row_idx+1), colors.HexColor("#FEE2E2"))
-                        ]))
-                
-                t.hAlign = 'CENTER'
                 self.elementos.append(t)
-                self.elementos.append(Spacer(1, 15))
+                self.elementos.append(Spacer(1, 10))
 
-            # Tabla 1: Top Viajes (Quitamos emojis para evitar cuadraditos)
-            crear_tabla_top(">> MAYOR PRODUCTIVIDAD (Por Viajes)", datos_admin['top_viajes'], es_por_horas=False)
-            
-            # Tabla 2: Top Horas
-            crear_tabla_top(">> MAYOR DEDICACION (Por Horas)", datos_admin['top_horas'], es_por_horas=True)
+            if 'top_viajes' in datos_admin:
+                crear_tabla_top(">> TOP 5: MAYOR PRODUCTIVIDAD", datos_admin['top_viajes'][:5], False)
+            if 'top_horas' in datos_admin:
+                crear_tabla_top(">> TOP 5: MAYOR DEDICACIÓN", datos_admin['top_horas'][:5], True)
 
-            # --- C. CAJA DE DINERO FINAL (Letra Ajustada) ---
-            self.elementos.append(Spacer(1, 10))
-            ganancia_total = datos_admin['total_empresa']
-            
-            d_money = [["INGRESOS TOTALES (VIAJES)"], [f"${ganancia_total:,.2f}"]]
-            t_money = Table(d_money, colWidths=[4*inch])
+            # Dinero Total Grande
+            ganancia_total = datos_admin.get('total_empresa', 0)
+            t_money = Table([["INGRESOS TOTALES DEL PERIODO"], [f"${ganancia_total:,.2f}"]], colWidths=[4*inch])
             t_money.setStyle(TableStyle([
                 ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#10B981")),
-                ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                
-                # --- AQUÍ ESTÁ EL AJUSTE DE TAMAÑO ---
-                ('FONTSIZE', (0,1), (-1,1), 18), # Bajamos de 24 a 18 para que quepa bien
-                ('TOPPADDING', (0,1), (-1,1), 10),
-                ('BOTTOMPADDING', (0,1), (-1,1), 10),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('FONTSIZE', (0,1), (-1,1), 18)
             ]))
-            t_money.hAlign = 'CENTER'
-            self.elementos.append(t_money)
+            self.elementos.append(Spacer(1, 15)); self.elementos.append(t_money)
 
-            self.elementos.append(Spacer(1, 20))
-            self.elementos.append(Paragraph("Documento Confidencial - Uso exclusivo Administración", self.estilo_programa))
+        # Pie de página final
+        self.elementos.append(Spacer(1, 20))
+        txt_fin = "*** FIN DEL REPORTE ***" if tipo_reporte == "PUBLICO" else "DOCUMENTO CONFIDENCIAL - ADMINISTRACIÓN"
+        self.elementos.append(Paragraph(txt_fin, self.estilo_periodo))
+        
+        return self._finalizar_reporte()
 
-        else:
-            self.elementos.append(Spacer(1, 40))
-            self.elementos.append(Paragraph("*** FIN DEL REPORTE PÚBLICO ***", self.estilo_periodo))
-
-        self._finalizar_reporte()
-        return self.nombre_archivo
-
-    # (MANTENEMOS TUS OTRAS FUNCIONES IGUALES)
+    # --- REPORTE INDIVIDUAL (ESTILOS ARREGLADOS) ---
     def generar_reporte_unidad(self, numero, texto_fecha, stats, lista_viajes):
-        self._agregar_encabezado(f"REPORTE DE UNIDAD - TAXI {numero}", texto_fecha)
-        ganancia = stats.get('ganancia', 0.0) 
-        viajes = stats.get('viajes', 0)
-        horas = stats.get('horas', 0.0)
-        d_res = [["INGRESOS", "VIAJES", "HORAS TRABAJADAS"], [f"${ganancia:,.2f}", str(viajes), f"{horas:,.1f} h"]]
-        t_res = Table(d_res, colWidths=[2.5*inch, 2*inch, 2.5*inch])
+        # 1. LOGO
+        nombre_logo = ruta_recurso("LogoElZorropng.png")
+        if not os.path.exists(nombre_logo): nombre_logo = ruta_recurso("LogoElZorropng.jpg")
+        
+        logo_img = []
+        if os.path.exists(nombre_logo):
+            img = Image(nombre_logo, width=1.3*inch, height=1.3*inch); img.hAlign = 'RIGHT'; logo_img = img
+        else:
+            logo_img = Paragraph("", self.estilo_normal)
+
+        # 2. ENCABEZADO
+        ahora = datetime.now()
+        
+        # Estilos alineados a la IZQUIERDA
+        estilo_titulo_taxi = ParagraphStyle('TaxiTit', parent=self.estilos['Heading1'], fontSize=22, textColor=colors.HexColor("#0F172A"), spaceAfter=2, alignment=TA_LEFT)
+        estilo_datos_head = ParagraphStyle('HeadDat', parent=self.estilos['Normal'], fontSize=11, textColor=colors.HexColor("#334155"), leading=14, alignment=TA_LEFT)
+
+        datos_izq = [
+            [Paragraph(f"REPORTE: TAXI {numero}", estilo_titulo_taxi)],
+            [Paragraph(f"<b>Reporte del día:</b> {texto_fecha}", estilo_datos_head)],
+            [Paragraph(f"<b>Corte:</b> {ahora.strftime('%H:%M')} hrs", estilo_datos_head)],
+        ]
+        
+        t_head = Table([[Table(datos_izq, colWidths=[4.5*inch]), logo_img]], colWidths=[5*inch, 2*inch])
+        t_head.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('ALIGN', (1,0), (1,0), 'RIGHT'), 
+            ('LEFTPADDING', (0,0), (-1,-1), 0), 
+            ('ALIGN', (0,0), (0,0), 'LEFT'),
+        ]))
+        
+        self.elementos.append(t_head)
+        self.elementos.append(Table([[""]], colWidths=[7*inch], style=[('LINEBELOW', (0,0), (-1,-1), 2, colors.HexColor("#FACC15"))]))
+        self.elementos.append(Spacer(1, 20))
+
+        # 3. RESUMEN
+        d_res = [["INGRESOS", "VIAJES", "HORAS"], [f"${stats.get('ganancia',0):,.2f}", str(stats.get('viajes',0)), f"{stats.get('horas',0):.1f} h"]]
+        t_res = Table(d_res, colWidths=[2.3*inch]*3)
         t_res.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1E293B")),
-            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('BOTTOMPADDING', (0,0), (-1,0), 10),
-            ('FONTSIZE', (0,1), (-1,1), 14), 
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1E293B")), ('TEXTCOLOR', (0,0), (-1,0), colors.HexColor("#94A3B8")),
+            ('BACKGROUND', (0,1), (-1,1), colors.HexColor("#F1F5F9")), ('TEXTCOLOR', (0,1), (-1,1), colors.HexColor("#0F172A")),
+            ('FONTSIZE', (0,1), (-1,1), 16), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('PADDING', (0,0), (-1,-1), 10)
         ]))
         self.elementos.append(t_res)
-        self.elementos.append(Spacer(1, 20))
-        enc = ["FECHA", "HORA", "ORIGEN / BASE", "DESTINO", "COSTO"]
-        dat = [enc]
+        self.elementos.append(Spacer(1, 25))
+
+        # 4. LISTA VIAJES (Aquí está el cambio de alineación)
+        
+        # Creamos un estilo específico para celdas de texto a la izquierda
+        estilo_celda_izq = ParagraphStyle('CeldaIzq', parent=self.estilos['Normal'], fontSize=10, alignment=TA_LEFT)
+
+        dat = [["HORA", "ORIGEN", "DESTINO", "COSTO"]]
         for v in lista_viajes:
-            fh = str(v['fecha']).split(" ") 
-            f_sola = fh[0]; h_sola = fh[1][:5] if len(fh)>1 else ""
-            dat.append([f_sola, h_sola, v.get('origen','---'), Paragraph(str(v.get('destino','---')), self.estilo_normal), f"${v['precio']:,.2f}"])
-        t_det = Table(dat, colWidths=[0.9*inch, 0.7*inch, 1.8*inch, 2.6*inch, 1*inch])
+            hora = str(v['fecha']).split(" ")[1][:5] if " " in str(v['fecha']) else str(v['fecha'])
+            
+            # Usamos el nuevo estilo 'estilo_celda_izq' en DESTINO
+            dat.append([
+                hora, 
+                str(v.get('origen',''))[:20], 
+                Paragraph(str(v.get('destino','')), estilo_celda_izq), # <--- AQUÍ SE FORZA LA IZQUIERDA
+                f"${v['precio']:,.2f}"
+            ])
+        
+        t_det = Table(dat, colWidths=[1*inch, 1.8*inch, 3*inch, 1.2*inch])
         t_det.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#475569")), 
-            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-            ('ALIGN', (-1,0), (-1,-1), 'RIGHT'), 
-            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F1F5F9")])
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'), 
+            ('LINEBELOW', (0,0), (-1,0), 1, colors.HexColor("#CBD5E1")),
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),  # Todo a la izquierda por defecto
+            ('ALIGN', (0,0), (0,-1), 'CENTER'), # Solo Hora centrada
+            ('ALIGN', (-1,0), (-1,-1), 'RIGHT'),# Precio a la derecha
+            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")])
         ]))
         self.elementos.append(t_det)
-        self._finalizar_reporte()
-
+        
+        return self._finalizar_reporte()
+    
+    
     def generar_ticket_incidencia(self, taxi, tipo, descripcion, monto, operadora, fecha_personalizada=None):
-        # Si nos mandan una fecha (reimpresión), la usamos. Si no, usamos "ahora".
-        if fecha_personalizada:
-            fecha_texto = fecha_personalizada
-            titulo = f"COPIA DE REPORTE - TAXI {taxi}" # Cambiamos título para que se sepa que es copia
-        else:
-            fecha_texto = datetime.now().strftime('%d/%m/%Y %H:%M')
-            titulo = f"REPORTE DE INCIDENCIA - TAXI {taxi}"
+        if fecha_personalizada: fecha_texto = fecha_personalizada; titulo = f"COPIA REPORTE - TAXI {taxi}"
+        else: fecha_texto = datetime.now().strftime('%d/%m/%Y %H:%M'); titulo = f"INCIDENCIA - TAXI {taxi}"
 
         self._agregar_encabezado(titulo, fecha_texto)
-        color_fondo = colors.HexColor("#FEE2E2") 
-        if monto == 0: color_fondo = colors.HexColor("#FEF3C7") 
-        datos = [["TIPO DE REPORTE:", tipo], ["DESCRIPCIÓN:", Paragraph(descripcion, self.estilo_normal)], ["REPORTADO POR:", operadora.upper()], ["MONTO A PAGAR:", f"${monto:,.2f}"]]
-        t = Table(datos, colWidths=[2*inch, 4*inch])
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,-1), color_fondo),
-            ('GRID', (0,0), (-1,-1), 1, colors.white),
-            ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'), 
-            ('PADDING', (0,0), (-1,-1), 12),
-            ('TEXTCOLOR', (1,3), (1,3), colors.red if monto > 0 else colors.black), 
-            ('FONTSIZE', (1,3), (1,3), 14), 
-        ]))
+        color = colors.HexColor("#FEE2E2") if monto > 0 else colors.HexColor("#FEF3C7")
+        t = Table([["TIPO:", tipo], ["DETALLE:", Paragraph(descripcion, self.estilo_normal)], ["MONTO:", f"${monto:,.2f}"]], colWidths=[2*inch, 4*inch])
+        t.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), color), ('GRID', (0,0), (-1,-1), 1, colors.white), ('PADDING', (0,0), (-1,-1), 12)]))
         self.elementos.append(t)
-        self.elementos.append(Spacer(1, 40))
-        self.elementos.append(Paragraph("*** FIN DEL REPORTE ***", self.estilo_programa))
         self._finalizar_reporte()

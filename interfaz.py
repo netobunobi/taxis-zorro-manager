@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QListWidgetItem, QDialog, QTableWidgetItem, 
     QComboBox, QDateEdit, QMessageBox, QFrame, QHeaderView,
     QLCDNumber, QStackedWidget, QSplashScreen, QFormLayout, QDialogButtonBox, QTableWidget,
-    QScrollArea, QTextEdit,QInputDialog
+    QScrollArea, QTextEdit,QInputDialog, QCheckBox
 )
 from PyQt6.QtCore import Qt, QSize, QDate, QSharedMemory, QTimer, QTime
 from PyQt6.QtGui import QFont, QColor, QPixmap, QPainter, QBrush, QIcon, QPen
@@ -106,6 +106,7 @@ class VentanaPrincipal(QMainWindow):
         ruta_ico = ruta_recurso("IconoElZorropng.ico")
         self.setWindowIcon(QIcon(ruta_ico))
         self.resize(1280, 720)
+        self.bases_ocultas = set()
         
         #flag para que no haga cositas insanas (cuando cargamos los datos al abrirlo)
         self.cargando_datos = False
@@ -145,15 +146,25 @@ class VentanaPrincipal(QMainWindow):
     # PESTAÑA 1: TABLERO DE CONTROL (NO TOCAR - ESTÁ BIEN)
     # ---------------------------------------------------------
     def init_tablero(self, tab):
-        # 1. BUSCADOR SUPERIOR
+        # 1. BUSCADOR SUPERIOR Y BOTÓN DE VISTAS
         container_buscador = QWidget()
         lc = QHBoxLayout(container_buscador)
         lc.setContentsMargins(0, 0, 10, 0)
+        
+        # --- BOTÓN NUEVO: GESTIONAR VISTAS ---
+        btn_vistas = QPushButton("👁️ Bases")
+        btn_vistas.setFixedSize(90, 30)
+        btn_vistas.setStyleSheet("background-color: #334155; color: white; border-radius: 5px; font-weight: bold;")
+        btn_vistas.clicked.connect(self.abrir_selector_bases) # Conectamos a la función nueva
+        lc.addWidget(btn_vistas)
+        # -------------------------------------
+
         self.txt_buscar_taxi = QLineEdit()
         self.txt_buscar_taxi.setPlaceholderText("🔍 Buscar unidad...")
         self.txt_buscar_taxi.setFixedWidth(200)
         self.txt_buscar_taxi.setStyleSheet("background-color: #1E293B; border: 2px solid #00D1FF; border-radius: 8px; color: white; font-weight: bold;")
         self.txt_buscar_taxi.textChanged.connect(self.busqueda_unificada)
+        
         lc.addWidget(self.txt_buscar_taxi)
         self.tabs.setCornerWidget(container_buscador, Qt.Corner.TopRightCorner)
 
@@ -262,7 +273,57 @@ class VentanaPrincipal(QMainWindow):
             # Dejar que Qt lo mueva y que 'rowsInserted' avise
             QListWidget.dropEvent(lista_widget, event)
             
+    def abrir_selector_bases(self):
+        d = QDialog(self)
+        d.setWindowTitle("Configurar Bases Visibles")
+        d.setMinimumWidth(300)
+        d.setStyleSheet("background-color: #1E293B; color: white;")
         
+        l = QVBoxLayout(d)
+        l.addWidget(QLabel("Desmarca las bases que quieras ocultar:", styleSheet="font-weight:bold; font-size:14px; color:#FACC15;"))
+        
+        scroll = QScrollArea()
+        widget_checks = QWidget()
+        l_checks = QVBoxLayout(widget_checks)
+        
+        bases = self.db.obtener_bases_fisicas()
+        checkboxes = {}
+
+        for bid, nombre in bases:
+            if bid >= 12: continue # Ignorar especiales
+            
+            chk = QCheckBox(nombre)
+            chk.setStyleSheet("font-size: 14px; padding: 5px;")
+            
+            # Si NO está en la lista de ocultas, lo marcamos como visible (Checked)
+            chk.setChecked(bid not in self.bases_ocultas)
+            
+            checkboxes[bid] = chk
+            l_checks.addWidget(chk)
+            
+        widget_checks.setLayout(l_checks)
+        scroll.setWidget(widget_checks)
+        scroll.setWidgetResizable(True)
+        l.addWidget(scroll)
+        
+        # Botones
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(d.accept)
+        bb.rejected.connect(d.reject)
+        l.addWidget(bb)
+        
+        if d.exec() == QDialog.DialogCode.Accepted:
+            # Actualizar la memoria
+            self.bases_ocultas.clear()
+            for bid, chk in checkboxes.items():
+                if not chk.isChecked(): # Si le quitaron la palomita
+                    self.bases_ocultas.add(bid) # A la lista negra
+            
+            # REDIBUJAR TODO
+            self.generar_bases_fisicas()
+            self.cargar_datos_en_tablero() # Recargar los taxis en las nuevas posiciones
+
+
     # ---------------------------------------------------------
     # PESTAÑA 2: ADMINISTRACIÓN
     # ---------------------------------------------------------
@@ -343,27 +404,45 @@ class VentanaPrincipal(QMainWindow):
     # ==========================================
 
     def generar_bases_fisicas(self):
-        bases_struct = self.db.obtener_bases_fisicas()
+        # 1. LIMPIEZA PROFUNDA (Esto arregla el crash)
+        # Primero borramos los widgets de la pantalla
         for i in reversed(range(self.grid_bases.count())): 
             self.grid_bases.itemAt(i).widget().setParent(None)
 
-        fila, columna = 0, 0
-        # === CAMBIO: 3 COLUMNAS ===
-        max_cols = 3 
+        # AHORA LA CLAVE: Borramos del diccionario las bases que son "físicas" (no especiales)
+        # Las bases especiales son 12, 90, 91, 92, 93. Las físicas son 1, 2, 3...
+        # Hacemos una copia de las claves con list(...) para poder borrar mientras iteramos
+        for bid in list(self.listas_bases.keys()):
+            if bid not in [12, 90, 91, 92, 93]: # Si NO es especial
+                del self.listas_bases[bid]      # La borramos de la memoria
 
-        for id_base, nombre in bases_struct:
-            # Filtro: Solo bases reales
+        # 2. FILTRAR VISIBLES
+        bases_todas = self.db.obtener_bases_fisicas()
+        bases_a_mostrar = [b for b in bases_todas if b[0] not in self.bases_ocultas]
+
+        # 3. Calcular Columnas Dinámicas
+        total_visibles = len(bases_a_mostrar)
+        max_cols = 3 
+        if total_visibles <= 4: max_cols = 2 
+        if total_visibles <= 1: max_cols = 1 
+
+        fila, columna = 0, 0
+
+        for id_base, nombre in bases_a_mostrar:
             if id_base >= 12: continue 
 
             caja = QWidget()
             caja.setObjectName("cajaBase")
+            
+            font_size = "18px" if total_visibles < 5 else "15px"
+            
             l = QVBoxLayout(caja)
             l.setContentsMargins(2, 2, 2, 2)
             l.setSpacing(0)
             
             lbl = QLabel(nombre)
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lbl.setStyleSheet("color: #FACC15; font-weight: bold; font-size: 15px; background: transparent;")
+            lbl.setStyleSheet(f"color: #FACC15; font-weight: bold; font-size: {font_size}; background: transparent;")
             l.addWidget(lbl)
 
             lista = QListWidget()
@@ -377,7 +456,7 @@ class VentanaPrincipal(QMainWindow):
             
             lista.setViewMode(QListWidget.ViewMode.IconMode)
             lista.setResizeMode(QListWidget.ResizeMode.Adjust)
-            lista.setIconSize(QSize(60, 50))
+            lista.setIconSize(QSize(85, 85))
             lista.setSpacing(5)
             
             lista.setStyleSheet("""
@@ -385,12 +464,15 @@ class VentanaPrincipal(QMainWindow):
                 QListWidget::item { border: 2px solid #475569; border-radius: 8px; color: white; font-weight: bold; font-size: 16px; }
             """)
 
+            # Registramos la nueva lista viva
             self.listas_bases[id_base] = lista
             l.addWidget(lista)
             self.grid_bases.addWidget(caja, fila, columna)
             
             columna += 1
-            if columna == max_cols: columna = 0; fila += 1
+            if columna == max_cols: 
+                columna = 0; fila += 1
+
 
     def cargar_datos_en_tablero(self):
         self.cargando_datos = True 
@@ -428,6 +510,11 @@ class VentanaPrincipal(QMainWindow):
             lista.setSpacing(4)
 
         taxis = self.db.obtener_taxis_activos()
+
+        # A) Primero ordenamos TODOS por antigüedad (para que las bases físicas se llenen bien)
+        # Esto asegura que el que llegó hace 3 horas aparezca antes que el que llegó hace 5 min.
+        taxis.sort(key=lambda x: x['fecha_movimiento'] if x['fecha_movimiento'] else "9999-99-99")
+
         ahora = datetime.now()
 
         for taxi in taxis:
@@ -490,6 +577,14 @@ class VentanaPrincipal(QMainWindow):
                 
                 self.listas_bases[bid].addItem(item)
 
+        # B) Una vez que TODO se llenó, "peinamos" solo las listas especiales
+        # para que se vean bonitas numéricamente.
+        ids_ordenar_numerico = [12, 90, 91, 92, 93]
+        
+        for bid in ids_ordenar_numerico:
+            if bid in self.listas_bases:
+                self.listas_bases[bid].sortItems(Qt.SortOrder.AscendingOrder)
+
         self.cargando_datos = False
 
     def detectar_cambio_base(self, lista_destino, indice):
@@ -526,43 +621,43 @@ class VentanaPrincipal(QMainWindow):
             if w == lista_destino: id_base_nueva = id_b; break
         
         if id_base_nueva and taxi_id_bd:
-            # 2. IDENTIFICAR ORIGEN
             conn, cur = self.db._conectar()
             cur.execute("SELECT base_actual_id FROM taxis WHERE id=?", (taxi_id_bd,))
             res = cur.fetchone()
             conn.close()
             id_ant = res['base_actual_id'] if res else 12 
             
-            # === LÓGICA DE TURNOS ===
-            # Inactivos: 12 (Fuera), 90 (Taller), 91 (Descanso)
             inactivos = [12, 90, 91]
-            
-            # SALE A TRABAJAR (De Inactivo -> A Activo)
             if id_ant in inactivos and id_base_nueva not in inactivos:
                 self.db.abrir_turno(taxi_id_bd)
-
-            # DEJA DE TRABAJAR (De Activo -> A Inactivo)
             elif id_ant not in inactivos and id_base_nueva in inactivos:
                 self.db.cerrar_turno(taxi_id_bd)
                 self.db.registrar_fin_viaje(taxi_id_bd)
 
-            # --- MANEJO DE VIAJES (Igual que antes) ---
-            if id_base_nueva in [92, 93]: # Viajes
-                if id_ant in [92, 93]:
-                    ans = QMessageBox.question(self, "Ligar", "¿Nuevo viaje?", QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No)
-                    if ans == QMessageBox.StandardButton.No:
-                        lista_destino.sortItems(Qt.SortOrder.AscendingOrder); return
-                    self.db.registrar_fin_viaje(taxi_id_bd)
-                    self.abrir_ventana_nuevo_viaje(taxi_id_bd, taxi_num, id_ant)
-                else:
-                    self.abrir_ventana_nuevo_viaje(taxi_id_bd, taxi_num, id_ant)
-            elif id_base_nueva <= 11:
-                if id_ant in [92, 93]: self.db.registrar_fin_viaje(taxi_id_bd)
+            # --- MANEJO DE VIAJES ---
+            if id_base_nueva in [92, 93]: 
+                # Abrimos la ventana
+                resultado = self.abrir_ventana_nuevo_viaje(taxi_id_bd, taxi_num, id_ant)
+                
+                # Si canceló, nos salimos y no movemos nada
+                if resultado == False: 
+                    return 
+            
+            else:
+                 if id_ant in [92, 93]: self.db.registrar_fin_viaje(taxi_id_bd)
 
-            # GUARDAR
+            # === CORRECCIÓN AQUÍ ===
+            # Quitamos el 'else' gigante que había antes.
+            # SIEMPRE ejecutamos esto al final para asegurar que el taxi 
+            # termine visualmente en la caja donde lo soltaste (92, 93, Taller, etc.)
+            # aunque el diálogo lo haya puesto momentáneamente en "13".
             self.db.actualizar_taxi_base(taxi_id_bd, id_base_nueva)
-        
-        lista_destino.sortItems(Qt.SortOrder.AscendingOrder)
+
+        # Lógica de ordenamiento
+        ids_especiales = [12, 90, 91, 92, 93]
+        if id_base_nueva in ids_especiales:
+            lista_destino.sortItems(Qt.SortOrder.AscendingOrder)
+
 
     def evento_drop_viajes(self, event):
         QListWidget.dropEvent(self.lista_viajes, event)
@@ -574,7 +669,8 @@ class VentanaPrincipal(QMainWindow):
         d = QDialog(self)
         d.setWindowTitle(f"🚕 Nuevo Viaje - Unidad {taxi_num}")
         d.setMinimumWidth(350)
-        d.setStyleSheet("QDialog { background-color: #1E293B; border: 2px solid #00D1FF; border-radius: 10px; } QLabel { color: #FACC15; font-weight: bold; font-size: 14px; } QLineEdit, QComboBox { background-color: #0F172A; color: white; border: 1px solid #334155; padding: 5px; border-radius: 5px; } QComboBox:disabled { background-color: #334155; color: #94A3B8; }")
+        # ... (Tus estilos se mantienen igual) ...
+        d.setStyleSheet("QDialog { background-color: #1E293B; border: 2px solid #00D1FF; border-radius: 10px; } QLabel { color: #FACC15; font-weight: bold; font-size: 14px; } QLineEdit, QComboBox { background-color: #0F172A; color: white; border: 1px solid #334155; padding: 5px; border-radius: 5px; }")
         
         l = QVBoxLayout(d)
         f = QFormLayout()
@@ -583,14 +679,18 @@ class VentanaPrincipal(QMainWindow):
         self.cmb_servicio.addItems(["Viaje en base", "Teléfono base", "Teléfono unidad", "Viaje aéreo"])
         
         self.cmb_origen = QComboBox()
+        # Traemos todas las bases + opciones extra
         bases_info = self.db.obtener_bases_fisicas() + [(12,'Fuera'),(13,'Calle')]
+        
         idx_def = 0
         for i, (bid, nom) in enumerate(bases_info):
             self.cmb_origen.addItem(nom, bid)
             if bid == id_origen: idx_def = i
         self.cmb_origen.setCurrentIndex(idx_def)
         
-        self.cmb_servicio.currentIndexChanged.connect(lambda i: self.cmb_origen.setEnabled(i==0))
+        # --- CORRECCIÓN: ELIMINAMOS EL BLOQUEO ---
+        # Antes había una línea aquí que hacía .setEnabled(False). LA QUITAMOS.
+        # Ahora siempre podrás elegir de dónde sale el taxi.
         
         self.txt_destino = QLineEdit(); self.txt_destino.setPlaceholderText("¿A dónde va?")
         self.txt_destino.setFocus()
@@ -612,11 +712,14 @@ class VentanaPrincipal(QMainWindow):
             dest = self.txt_destino.text().strip().title()
             try: cost = float(self.txt_costo.text().replace(',', '.'))
             except: cost = 0.0
+            
             self.db.registrar_viaje(taxi_id, st, orig, dest, cost)
-            self.db.actualizar_taxi_base(taxi_id, 13)
+            self.db.actualizar_taxi_base(taxi_id, 13) # Lo mandamos a "En Viaje"
+            return True # <--- CAMBIO IMPORTANTE: Avisamos que SI se hizo
         else:
-            self.cargar_datos_en_tablero()
-
+            self.cargar_datos_en_tablero() # Recargamos para devolver el taxi a su lugar
+            return False # <--- CAMBIO IMPORTANTE: Avisamos que NO se hizo
+        
     # ==========================================
     # LÓGICA DE BÚSQUEDA Y FILTROS
     # ==========================================
@@ -748,7 +851,7 @@ class VentanaPrincipal(QMainWindow):
             ids = d['tipo_servicio_id']
             
             # Lógica para mostrar nombre de base solo si es 'Viaje en Base' (ID 1)
-            nom_b = d['nombre_base'] if ids == 1 else "////"
+            nom_b = d['nombre_base'] if d['nombre_base'] else "////"
             
             # Formato de Fecha y Hora
             fh = str(d['fecha_hora_inicio']).split(" ")
@@ -986,9 +1089,18 @@ class VentanaPrincipal(QMainWindow):
 
     def registrar_nuevo_taxi_ui(self):
         n = self.txt_nuevo_taxi.text().strip()
-        if n and self.db.registrar_nuevo_taxi(n, id_base_inicial=12):
+        if not n: return
+
+        # Intentamos registrar
+        if self.db.registrar_nuevo_taxi(n, id_base_inicial=12):
+            # Si funcionó (True)
             self.txt_nuevo_taxi.clear()
-            self.cargar_tabla_flota(); self.cargar_datos_en_tablero()
+            self.cargar_tabla_flota()
+            self.cargar_datos_en_tablero()
+            QMessageBox.information(self, "Éxito", f"Taxi {n} dado de alta.")
+        else:
+            # Si falló (False) -> Probablemente ya existe
+            QMessageBox.warning(self, "Error", f"No se pudo registrar el taxi {n}.\nVerifica que no exista ya en la lista.")
 
     def alternar_estado_taxi(self, tid, est):
         n = "INACTIVO" if est=="ACTIVO" else "ACTIVO"
@@ -1056,102 +1168,70 @@ class VentanaPrincipal(QMainWindow):
 
     def exportar_pdf_unidad(self):
         # 1. Obtener datos de la UI
-        idx = self.combo_taxi_reporte.currentIndex()
-        if idx < 0: return
-        taxi_id = self.combo_taxi_reporte.itemData(idx)
-        taxi_num = self.combo_taxi_reporte.currentText()
+        # Usamos el campo de texto donde escribes el número del taxi
+        taxi_num = self.txt_taxi_selec.text().strip()
         
-        periodo_idx = self.combo_periodo_reporte.currentIndex() # 0=Dia, 1=Mes
-        periodo = "DIA" if periodo_idx == 0 else "MES"
+        if not taxi_num:
+            QMessageBox.warning(self, "Faltan datos", "Por favor selecciona o escribe un número de taxi primero.")
+            return
+
+        taxi_id = self.db.obtener_id_por_numero(taxi_num)
+        if not taxi_id:
+            QMessageBox.warning(self, "Error", "El taxi no existe en la base de datos.")
+            return
         
-        # Fecha correcta
-        fecha_dt = self.date_reporte.date().toPyDate()
+        # Periodo seleccionado (DIA, MES, AÑO)
+        periodo_txt = self.cmb_periodo_stats.currentText()
+        periodo_bd = "DIA" # Valor por defecto
+        if periodo_txt == "MES": periodo_bd = "MES"
+        elif periodo_txt == "AÑO": periodo_bd = "AÑO"
+        elif periodo_txt == "SIEMPRE": periodo_bd = "SIEMPRE"
+        
+        # Fecha de referencia
+        fecha_dt = self.date_selector.date().toPyDate()
         fecha_str = fecha_dt.strftime("%Y-%m-%d")
 
-        # 2. Generar nombre de archivo único (con Hora-Minuto-Segundo para evitar choques)
+        # Texto bonito para el reporte
+        texto_fecha = fecha_dt.strftime("%d/%m/%Y")
+        if periodo_txt == "MES": texto_fecha = fecha_dt.strftime("%B %Y").upper()
+        if periodo_txt == "AÑO": texto_fecha = f"AÑO {fecha_dt.year}"
+        if periodo_txt == "SIEMPRE": texto_fecha = "HISTÓRICO TOTAL"
+
+        # 2. Generar nombre de archivo único
         timestamp = datetime.now().strftime("%H%M%S")
         nombre_pdf = f"Reporte_{taxi_num}_{timestamp}.pdf"
-        
-        # Carpeta de Documentos
-        ruta_docs = os.path.join(os.path.expanduser("~"), "Documents", "Reportes Taxis El Zorro")
-        if not os.path.exists(ruta_docs): os.makedirs(ruta_docs)
-        
-        ruta_completa = os.path.join(ruta_docs, nombre_pdf)
 
         # 3. Obtener datos de la BD
-        datos = self.db.obtener_viajes_por_unidad_y_periodo(taxi_id, periodo, fecha_ref=fecha_str)
-        stats = self.db.obtener_estadisticas_unidad(taxi_id, periodo, fecha_ref=fecha_str)
+        datos = self.db.obtener_viajes_por_unidad_y_periodo(taxi_id, periodo_bd, fecha_ref=fecha_str)
+        stats = self.db.obtener_estadisticas_unidad(taxi_id, periodo_bd, fecha_ref=fecha_str)
 
+        # Validación: Si no hay nada, avisamos
         if not datos and stats['viajes'] == 0:
             QMessageBox.warning(self, "Sin datos", "No hay viajes registrados para este periodo.")
             return
 
-        # 4. CREAR EL PDF (Blindado contra errores de escritura)
+        # 4. LLAMAR AL GENERADOR PROFESIONAL (Aquí estaba el error antes)
         try:
-            c = canvas.Canvas(ruta_completa, pagesize=letter)
-            ancho, alto = letter
-
-            # --- ENCABEZADO ---
-            c.setFont("Helvetica-Bold", 18)
-            c.drawString(50, alto - 50, f"REPORTE DE UNIDAD: TAXI {taxi_num}")
+            # Creamos la instancia del generador que está en reportes.py
+            gen = GeneradorPDF(nombre_pdf)
             
-            c.setFont("Helvetica", 10)
-            c.drawString(50, alto - 70, f"Fecha de Corte: {fecha_str}")
-            c.drawString(50, alto - 85, f"Periodo: {periodo}")
-            c.drawString(400, alto - 50, f"Generado: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-
-            # --- RESUMEN ---
-            c.setStrokeColorRGB(0, 0, 0)
-            c.rect(50, alto - 140, 500, 40)
+            # Usamos la función BONITA que diseñamos
+            ruta_final = gen.generar_reporte_unidad(taxi_num, texto_fecha, stats, datos)
             
-            c.setFont("Helvetica-Bold", 12)
-            c.drawString(70, alto - 125, f"Viajes Totales: {stats['viajes']}")
-            c.drawString(250, alto - 125, f"Ingreso Total: ${stats['ganancia']:.2f}")
-            c.drawString(450, alto - 125, f"Horas Activas: {stats['horas']:.1f}h")
+            # 5. Abrir automáticamente
+            if ruta_final:
+                os.startfile(ruta_final)
+            else:
+                 QMessageBox.warning(self, "Error", "El reporte no devolvió una ruta válida.")
 
-            # --- TABLA DE VIAJES ---
-            y = alto - 180
-            c.setFont("Helvetica-Bold", 10)
-            c.drawString(50, y, "HORA")
-            c.drawString(150, y, "ORIGEN")
-            c.drawString(300, y, "DESTINO")
-            c.drawString(500, y, "PRECIO")
-            c.line(50, y-5, 550, y-5)
-            y -= 20
-
-            c.setFont("Helvetica", 9)
-            for d in datos:
-                if y < 50: # Salto de página simple
-                    c.showPage()
-                    y = alto - 50
-                
-                # Formato de hora (solo hora si es reporte diario)
-                try:
-                    hora_show = d['fecha'].split(" ")[1][:5] # "14:30"
-                except: hora_show = d['fecha']
-
-                c.drawString(50, y, hora_show)
-                c.drawString(150, y, str(d['origen'])[:25]) # Recortar si es largo
-                c.drawString(300, y, str(d['destino'])[:35])
-                c.drawString(500, y, f"${d['precio']:.2f}")
-                y -= 15
-
-            c.save() # Aquí se guarda y cierra el archivo
-            
-        except PermissionError:
-            QMessageBox.critical(self, "Error", "No se pudo guardar el PDF.\nEs posible que el archivo esté abierto en otro programa.")
-            return
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error generando PDF: {e}")
-            return
+            # Imprimimos el error completo en consola por si acaso
+            print(f"Error detallado: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", f"No se pudo generar el PDF.\nDetalle: {e}")
 
-        # 5. ABRIR EL ARCHIVO AUTOMÁTICAMENTE (Intento seguro)
-        try:
-            os.startfile(ruta_completa)
-        except Exception as e:
-            # Si falla abrirlo (porque no hay lector PDF o permisos), solo avisamos en consola y seguimos.
-            print(f"Aviso: El PDF se creó pero no se pudo abrir automáticamente: {e}")
-            QMessageBox.information(self, "PDF Creado", f"Reporte guardado en:\n{ruta_completa}")
+
     # ---------------------------------------------------------
     # GESTIÓN reportes (Página 4 Admin)
     # ---------------------------------------------------------
@@ -1569,10 +1649,19 @@ class VentanaPrincipal(QMainWindow):
             password_pdf = pwd 
 
         # 2. OBTENER DATOS
-        datos_gral = self.db.obtener_datos_reporte_global(periodo, fecha_str)
+        datos_gral = self.db.obtener_datos_reporte_global(periodo, fecha_str)# Obtenemos el ranking de TODOS los taxis para hacer la sábana
+        # Reusamos la función 'obtener_top_taxis_admin' porque esa ya calcula viajes y dinero de todos
+        datos_todos = self.db.obtener_top_taxis_admin(periodo, fecha_str)
+        
+        # Inyectamos esta lista en los datos generales para que el reporte la vea
+        if datos_todos:
+            # Usamos la lista 'top_viajes' que trae a todos los taxis ordenados
+            datos_gral['detalle_flota'] = datos_todos['top_viajes']
+        # =================================================================
+
         datos_admin = None
         if tipo == "ADMIN":
-            datos_admin = self.db.obtener_top_taxis_admin(periodo, fecha_str)
+            datos_admin = datos_todos # Para el admin pasamos todo el objeto completo con gráficas
 
         # 3. GENERAR PDF
         nombre_pdf = f"Reporte_{tipo}_{periodo}_{datetime.now().strftime('%H%M')}.pdf"
@@ -1634,34 +1723,72 @@ class VentanaPrincipal(QMainWindow):
 
 def verificar_y_crear_db():
     nombre_db = "taxis.db"
-    if os.path.exists(nombre_db):
-        try: ctypes.windll.kernel32.SetFileAttributesW(nombre_db, 0x80) # Visible (0x80) para que la encuentres
-        except: pass
-        return True
-
-    if QMessageBox.question(None, "BD No Encontrada", "¿Crear nueva base de datos?", QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No) == QMessageBox.StandardButton.No:
-        return False
-
+    
+    # 1. CONEXIÓN (O CREACIÓN SI NO EXISTE)
     try:
         conn = sqlite3.connect(nombre_db)
         c = conn.cursor()
         c.execute("PRAGMA foreign_keys = ON;")
+        
+        # 2. CREAR TABLAS (Solo si no existen)
         c.execute("CREATE TABLE IF NOT EXISTS cat_tipos_servicio (id INTEGER PRIMARY KEY AUTOINCREMENT, descripcion TEXT UNIQUE NOT NULL)")
         c.execute("CREATE TABLE IF NOT EXISTS cat_bases (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre_base TEXT UNIQUE NOT NULL)")
-        c.execute("CREATE TABLE IF NOT EXISTS taxis (id INTEGER PRIMARY KEY AUTOINCREMENT, numero_economico TEXT NOT NULL, estado_sistema TEXT DEFAULT 'ACTIVO', fecha_alta TEXT, fecha_baja TEXT, base_actual_id INTEGER DEFAULT 12, FOREIGN KEY(base_actual_id) REFERENCES cat_bases(id))")
+        
+        # Nota: Aquí definimos la estructura ideal
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS taxis (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                numero_economico TEXT NOT NULL UNIQUE, 
+                estado_sistema TEXT DEFAULT 'ACTIVO', 
+                fecha_alta TEXT, 
+                fecha_baja TEXT, 
+                base_actual_id INTEGER DEFAULT 12, 
+                fecha_movimiento TEXT,
+                FOREIGN KEY(base_actual_id) REFERENCES cat_bases(id)
+            )
+        """)
+        
         c.execute("CREATE TABLE IF NOT EXISTS viajes (id INTEGER PRIMARY KEY AUTOINCREMENT, taxi_id INTEGER NOT NULL, tipo_servicio_id INTEGER NOT NULL, base_salida_id INTEGER, destino TEXT, precio REAL DEFAULT 0.0, fecha_hora_inicio TEXT, fecha_hora_fin TEXT, FOREIGN KEY(taxi_id) REFERENCES taxis(id))")
-        
+        c.execute("CREATE TABLE IF NOT EXISTS incidencias (id INTEGER PRIMARY KEY AUTOINCREMENT, taxi_id INTEGER, tipo TEXT, descripcion TEXT, monto REAL DEFAULT 0.0, fecha_registro TEXT, resuelto TEXT DEFAULT 'PENDIENTE', operador_id TEXT DEFAULT 'SISTEMA')")
+        c.execute("CREATE TABLE IF NOT EXISTS turnos (id INTEGER PRIMARY KEY AUTOINCREMENT, taxi_id INTEGER, fecha_inicio TEXT, fecha_fin TEXT)")
+
+        # 3. DATOS INICIALES (Solo si está vacío)
         c.executemany("INSERT OR IGNORE INTO cat_tipos_servicio (id, descripcion) VALUES (?, ?)", [(1,'Viaje en base'),(2,'Telefono base'),(3,'Telefono unidad'),(4,'Viaje aereo')])
-        c.executemany("INSERT OR IGNORE INTO cat_bases (id, nombre_base) VALUES (?, ?)", [(1,'Cessa'),(2,'Licuor'),(3,'Santiagito'),(4,'Aurrera'),(5,'Mercado'),(6,'Caros'),(7,'Survi'),(8,'Capulin'),(9,'Zocalo'),(10,'16 de septiembre'),(11,'Parada principal'),(12,'Fuera de Servicio'),(13,'En Viaje')])
-        c.executemany("INSERT INTO taxis (numero_economico, estado_sistema, base_actual_id) VALUES (?, ?, ?)", [(str(n), 'ACTIVO', 12) for n in range(35, 101)])
+        c.executemany("INSERT OR IGNORE INTO cat_bases (id, nombre_base) VALUES (?, ?)", [(1,'Cessa'),(2,'Licuor'),(3,'Santiagito'),(4,'Aurrera'),(5,'Mercado'),(6,'Caros'),(7,'Survi'),(8,'Capulin'),(9,'Zocalo'),(10,'16 de septiembre'),(11,'Parada principal'),(12,'Fuera de Servicio'),(13,'En Viaje'), (90, 'Taller'), (91, 'Descanso'), (92, 'Foráneo'), (93, 'Local')])
         
-        conn.commit(); conn.close()
-        try: ctypes.windll.kernel32.SetFileAttributesW(nombre_db, 0x80)
+        # 4. === AUTO-REPARACIÓN (MIGRACIÓN) ===
+        # Revisamos qué columnas tiene la tabla 'taxis' actualmente
+        c.execute("PRAGMA table_info(taxis)")
+        columnas = [info[1] for info in c.fetchall()]
+        
+        # Si falta 'fecha_alta', la agregamos
+        if 'fecha_alta' not in columnas:
+            print("🔧 Actualizando BD: Agregando columna fecha_alta...")
+            c.execute("ALTER TABLE taxis ADD COLUMN fecha_alta TEXT")
+            
+        # Si falta 'fecha_baja', la agregamos
+        if 'fecha_baja' not in columnas:
+            print("🔧 Actualizando BD: Agregando columna fecha_baja...")
+            c.execute("ALTER TABLE taxis ADD COLUMN fecha_baja TEXT")
+
+        # Si falta 'fecha_movimiento', la agregamos (por si acaso)
+        if 'fecha_movimiento' not in columnas:
+            print("🔧 Actualizando BD: Agregando columna fecha_movimiento...")
+            c.execute("ALTER TABLE taxis ADD COLUMN fecha_movimiento TEXT")
+
+        conn.commit()
+        conn.close()
+        
+        # Hacer visible el archivo en Windows
+        try: ctypes.windll.kernel32.SetFileAttributesW(nombre_db, 0x80) 
         except: pass
+        
         return True
+        
     except Exception as e:
-        QMessageBox.critical(None, "Error", f"No se pudo crear BD:\n{e}")
+        QMessageBox.critical(None, "Error BD", f"No se pudo verificar/actualizar la base de datos:\n{e}")
         return False
+    
 
 def realizar_respaldo_seguridad():
     """ Crea una copia de la base de datos en la carpeta /RESPALDOS al iniciar """
@@ -1704,6 +1831,9 @@ if __name__ == "__main__":
         sys.exit(0)
 
     realizar_respaldo_seguridad()
+
+    if not verificar_y_crear_db():
+        sys.exit(1)
 
     # 2. Splash Screen (Opcional, si tienes el logo se ve bonito)
     splash = None
