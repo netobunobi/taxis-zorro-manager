@@ -1660,9 +1660,6 @@ def verificar_y_crear_db():
     except Exception as e:
         QMessageBox.critical(None, "Error", f"No se pudo crear BD:\n{e}")
         return False
-    
-
-# --- AGREGAR AL FINAL DE interfaz.py (Antes del bloque 'if __name__...') ---
 
 def realizar_respaldo_seguridad():
     """ Crea una copia de la base de datos en la carpeta /RESPALDOS al iniciar """
@@ -1687,16 +1684,8 @@ def realizar_respaldo_seguridad():
             except Exception as e:
                 print(f"⚠️ No se pudo crear respaldo: {e}")
 
-# --- Y LUEGO LO LLAMAS EN EL MAIN ---
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    
-    # ... (Tu código de memoria compartida) ...
 
-    # ¡AQUÍ LLAMAS LA FUNCIÓN!
-    realizar_respaldo_seguridad() 
 
-    # ... (Tu código de splash screen e inicio) ...
     
 
     

@@ -22,29 +22,32 @@ A diferencia de una simple hoja de cálculo, este sistema ofrece un entorno visu
 
 ## 🚀 Características y Funcionalidades
 
-### 🎮 Control Operativo Visual
+### 🎮 Control Operativo Visual (Semáforo Inteligente)
+El sistema utiliza un código de colores automatizado para alertar a las operadoras sobre demoras sin necesidad de revisar el reloj:
+
 * **Sistema Drag & Drop:** Asignación de unidades arrastrando fichas visuales (estilo neón) entre bases físicas, zonas de viaje y talleres.
-* **Lógica de Rebote:** Detección automática de viajes consecutivos y validaciones de seguridad para evitar errores de captura.
-* **Gestión de Flota:** Base de datos pre-cargada con unidades del 35 al 100, con capacidad de altas y bajas administrativas.
-* **Manejo de Estados:** Control visual inmediato de unidades: *En Base* (Amarillo), *En Viaje* (Verde) y *Fuera de Servicio/Taller* (Rojo).
+* 🟨 **Amarillo (Estándar):** Unidad operativa y en tiempo correcto.
+* 🌑 **Gris Acero:** Unidad en "Fuera de Servicio" (No disponible).
+* 🟧 **Naranja (Alerta):** Retraso leve (ej. >30 min en viaje local).
+* 🟥 **Rojo (Crítico):** Demora excesiva (ej. >45 min en viaje local).
+* **Tooltips Vivos:** Al pasar el mouse sobre una unidad, se despliega una tarjeta con el tiempo exacto transcurrido y su estado detallado.
 
 ### 🧠 Inteligencia de Negocios (BI)
 * **Heatmaps de Horas Pico:** Gráficos que muestran las horas de mayor demanda para optimizar la disponibilidad de choferes.
 * **Estrategia Operativa:** Identificación automática de qué base vende más en qué día y a qué hora (ej. *Mercado - Sábado - 12:00 PM*).
 * **Salón de la Fama:** Rankings automáticos con los top 3 conductores por ingresos generados, número de viajes y horas trabajadas.
 
+### 🛡️ Seguridad y Administrativo
+* **Multas Automáticas:** Detección de incumplimiento de horarios laborales con generación automática de adeudos.
+* **Reimpresión de Tickets:** Recuperación de reportes históricos con fecha original y firma digital de la operadora (Audit Trail).
+* **Respaldo Automático (Backup):** Sistema de seguridad silencioso que crea una copia de la base de datos cada vez que se inicia el programa en la carpeta oculta `/RESPALDOS_AUTO`.
+
 ### 📉 Reportes Corporativos
-* **Reportes PDF Ejecutivos:** Generación de documentos PDF listos para imprimir con:
-    * Resumen financiero (Ingresos Totales, Ticket Promedio).
-    * Gráficos de pastel y barras integrados (Matplotlib).
-    * Tablas de desglose detallado.
+* **Reportes PDF Ejecutivos:** Generación de documentos listos para imprimir con resumen financiero, ticket promedio y gráficos de pastel/barras (Matplotlib).
 * **Filtros Temporales:** Generación de reportes por Día, Mes, Año o Histórico completo ("Siempre").
 * **Diseño Profesional:** Documentos membretados con logotipo corporativo y diseño limpio.
 
-### 🛠️ Detalles Técnicos
-* **Pantalla de Carga (Splash Screen):** Inicio profesional con logotipo corporativo mientras carga la base de datos.
-* **Base de Datos Unificada:** SQLite local optimizada con llaves foráneas e integridad referencial.
-* **Portable:** Compilado en un ejecutable `.exe` independiente que no requiere instalación de Python en el equipo del cliente.
+---
 
 ## 🛠️ Stack Tecnológico
 
@@ -57,43 +60,36 @@ Este proyecto ha sido desarrollado utilizando herramientas modernas y librerías
 | **Base de Datos** | ![SQLite](https://img.shields.io/badge/-SQLite-blue?style=flat&logo=sqlite) | Almacenamiento local de viajes, taxis y catálogos. |
 | **Reportes** | **ReportLab** | Motor de generación de PDFs pixel-perfect. |
 | **Gráficos** | **Matplotlib** | Visualización de estadísticas y métricas en reportes. |
-| **Empaquetado** | **PyInstaller** | Compilación a binario (.exe) para distribución en Windows. |
 
-## 📥 Descarga e Instalación (Usuario Final)
+---
 
-1. Ve a la sección de **[Releases](https://github.com/netobunobi/taxis-zorro-manager/releases)** de este repositorio.
-2. Descarga el archivo `.zip` de la última versión (v1.0).
-3. Descomprime la carpeta en tu Escritorio.
-4. Ejecuta `SistemaTaxisZorro.exe`.
-   * *Nota: Asegúrate de que el archivo `taxis.db` esté siempre en la misma carpeta que el ejecutable.*
+## 📥 Guía de Instalación
 
-## 🔧 Instalación y Desarrollo (Para Programadores)
+### 1. Clonar el repositorio
+(Ejecutar esta línea en tu terminal/consola git):
+`git clone https://github.com/netobunobi/taxis-zorro-manager.git`
+`cd taxis-zorro-manager`
 
-Si deseas clonar y modificar el código fuente:
+### 2. Crear entorno virtual (Opcional pero recomendado)
+(Ejecutar estas líneas en consola):
+`python -m venv venv`
+`venv\Scripts\activate`
 
-1. **Clonar el repositorio:**
-   ```bash
-   git clone https://github.com/netobunobi/taxis-zorro-manager.git
-   cd taxis-zorro-manager
-   ```
-   2. **Crear entorno virtual (Recomendado):**
-   ```bash
-   python -m venv venv
-   # En Windows:
-   venv\Scripts\activate
-   ```
-   3. **Instalar dependencias:**
-   ```bash
-   pip install PyQt6 matplotlib reportlab pyinstaller
-   ```
-   4. **Inicializar Base de Datos:**
-   ```bash
-   python reset_db.py
-   ```
-   5. **Ejecutar la interfaz:**
-   ```bash
-   python interfaz.py
-   ```
+### 3. Instalar dependencias
+(Ejecutar esta línea en consola para bajar las librerías):
+`pip install -r requirements.txt`
+
+### 4. Ejecutar el Sistema
+(Ejecutar esta línea para abrir el programa):
+`python interfaz.py`
+
+*(Nota: Al abrir por primera vez, el sistema creará automáticamente el archivo `taxis.db` vacío).*
+
+### 5. Cargar Datos de Prueba (Opcional)
+Para ver el sistema lleno de vida (viajes, multas, alertas de colores), ejecuta el script inyector incluido:
+`python generar_datos_final.py`
+
+---
 
 ## 🛡️ Licencia y Términos de Uso
 
@@ -107,11 +103,9 @@ El código fuente publicado en este repositorio se exhibe únicamente con fines 
 * No se concede ninguna licencia implícita ni derechos de propiedad intelectual a terceros que visualicen este repositorio.
 
 ### 2. Exención de Responsabilidad (Disclaimer)
-ESTE SOFTWARE SE PROPORCIONA "TAL CUAL", SIN GARANTÍA DE NINGÚN TIPO, EXPRESA O IMPLÍCITA, INCLUYENDO PERO NO LIMITADO A LAS GARANTÍAS DE COMERCIABILIDAD, IDONEIDAD PARA UN PROPÓSITO PARTICULAR Y NO INFRACCIÓN.
-
-EN NINGÚN CASO EL AUTOR (ERNESTO VELEZ ORTEGA) O LOS TITULARES DE LOS DERECHOS DE AUTOR SERÁN RESPONSABLES DE NINGUNA RECLAMACIÓN, DAÑOS U OTRAS RESPONSABILIDADES, YA SEA EN UNA ACCIÓN DE CONTRATO, AGRAVIO O DE OTRO TIPO, QUE SURJAN DE, FUERA DE O EN CONEXIÓN CON EL SOFTWARE O EL USO U OTRAS OPERACIONES EN EL SOFTWARE.
+ESTE SOFTWARE SE PROPORCIONA "TAL CUAL", SIN GARANTÍA DE NINGÚN TIPO, EXPRESA O IMPLÍCITA. EN NINGÚN CASO EL AUTOR SERÁ RESPONSABLE DE NINGUNA RECLAMACIÓN QUE SURJA DEL USO DEL SOFTWARE.
 
 ---
 <div align="center">
     <sub>Desarrollado con dedicación por Ernesto Velez Ortega</sub>
-</div>  
+</div>
