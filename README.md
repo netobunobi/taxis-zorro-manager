@@ -67,27 +67,37 @@ Este proyecto ha sido desarrollado utilizando herramientas modernas y librerías
 
 ### 1. Clonar el repositorio
 (Ejecutar esta línea en tu terminal/consola git):
+
+```Bash
 `git clone https://github.com/netobunobi/taxis-zorro-manager.git`
 `cd taxis-zorro-manager`
+```
 
 ### 2. Crear entorno virtual (Opcional pero recomendado)
 (Ejecutar estas líneas en consola):
+```Bash
 `python -m venv venv`
 `venv\Scripts\activate`
+```
 
 ### 3. Instalar dependencias
 (Ejecutar esta línea en consola para bajar las librerías):
+```Bash
 `pip install -r requirements.txt`
+```
 
 ### 4. Ejecutar el Sistema
 (Ejecutar esta línea para abrir el programa):
+```Bash
 `python interfaz.py`
-
+```
 *(Nota: Al abrir por primera vez, el sistema creará automáticamente el archivo `taxis.db` vacío).*
 
 ### 5. Cargar Datos de Prueba (Opcional)
 Para ver el sistema lleno de vida (viajes, multas, alertas de colores), ejecuta el script inyector incluido:
+```Bash
 `python generar_datos_final.py`
+```
 
 ---
 
