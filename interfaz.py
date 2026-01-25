@@ -102,7 +102,9 @@ class TaxiItem(QListWidgetItem):
 class VentanaPrincipal(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Sistema Taxis El Zorro Manager")
+        self.setWindowTitle("Taxis El Zorro")
+        ruta_ico = ruta_recurso("IconoElZorropng.ico")
+        self.setWindowIcon(QIcon(ruta_ico))
         self.resize(1280, 720)
         
         #flag para que no haga cositas insanas (cuando cargamos los datos al abrirlo)
