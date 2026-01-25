@@ -1,880 +1,488 @@
 import sqlite3
 import os
+import ctypes
 from datetime import datetime
 
 class GestorBaseDatos:
-    def __init__(self, nombre_bd="taxis.db"):
-        self.nombre_bd = nombre_bd
-        self._verificar_archivo()
-
-    def _verificar_archivo(self):
-        """Verifica que la BD exista antes de intentar conectar"""
-        if not os.path.exists(self.nombre_bd):
-            print(f"⚠️ ALERTA: No encuentro {self.nombre_bd}. Asegúrate de haber corrido crear_bd.py")
+    def __init__(self, db_name="taxis.db"):
+        self.db_name = db_name
 
     def _conectar(self):
-        """Crea la conexión y configura para recibir diccionarios"""
-        conexion = sqlite3.connect(self.nombre_bd)
-        # Esto permite acceder a los datos por nombre (fila['numero']) 
-        conexion.row_factory = sqlite3.Row 
-        
-        cursor = conexion.cursor()
-        cursor.execute("PRAGMA foreign_keys = ON;") # Siempre activar esto
-        return conexion, cursor
+        """Método privado para obtener conexión"""
+        conn = sqlite3.connect(self.db_name)
+        conn.row_factory = sqlite3.Row  # Permite acceder a columnas por nombre
+        return conn, conn.cursor()
 
     # ==========================================
-    # 1. FUNCIONES DE LECTURA (CONSULTAS)
+    # LÓGICA DE CREACIÓN (V2.0)
     # ==========================================
+    @staticmethod
+    def crear_nueva_bd_v2(nombre_db="taxis.db"):
+        """ Crea la estructura completa V2 desde cero """
+        try:
+            conn = sqlite3.connect(nombre_db)
+            c = conn.cursor()
+            c.execute("PRAGMA foreign_keys = ON;")
+
+            # 1. TABLAS CATÁLOGO
+            c.execute("CREATE TABLE IF NOT EXISTS cat_tipos_servicio (id INTEGER PRIMARY KEY AUTOINCREMENT, descripcion TEXT UNIQUE NOT NULL)")
+            c.execute("CREATE TABLE IF NOT EXISTS cat_bases (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre_base TEXT UNIQUE NOT NULL)")
+            
+            # 2. TABLA CONFIGURACIÓN (Para contraseñas y ajustes)
+            c.execute("CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT)")
+
+            # 3. TABLA TAXIS
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS taxis (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                    numero_economico TEXT NOT NULL UNIQUE, 
+                    estado_sistema TEXT DEFAULT 'ACTIVO', 
+                    base_actual_id INTEGER DEFAULT 12, 
+                    FOREIGN KEY(base_actual_id) REFERENCES cat_bases(id)
+                )
+            """)
+
+            # 4. TABLA VIAJES
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS viajes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                    taxi_id INTEGER NOT NULL, 
+                    tipo_servicio_id INTEGER NOT NULL, 
+                    base_salida_id INTEGER, 
+                    destino TEXT, 
+                    precio REAL DEFAULT 0.0, 
+                    fecha_hora_inicio TEXT, 
+                    fecha_hora_fin TEXT, 
+                    FOREIGN KEY(taxi_id) REFERENCES taxis(id),
+                    FOREIGN KEY(tipo_servicio_id) REFERENCES cat_tipos_servicio(id)
+                )
+            """)
+
+            # 5. NUEVA: TABLA INCIDENCIAS (Multas, Reportes, Observaciones)
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS incidencias (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    taxi_id INTEGER,
+                    tipo TEXT,       -- 'MULTA', 'OBSERVACION', 'CASTIGO'
+                    descripcion TEXT,
+                    monto REAL DEFAULT 0.0,
+                    fecha_registro TEXT,
+                    FOREIGN KEY(taxi_id) REFERENCES taxis(id)
+                )
+            """)
+
+            # 6. NUEVA: TABLA BITÁCORA (Pendientes entre turnos)
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS bitacora (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    mensaje TEXT,
+                    fecha_creacion TEXT,
+                    estado TEXT DEFAULT 'PENDIENTE' -- 'PENDIENTE', 'RESUELTO'
+                )
+            """)
+
+            # --- INSERCIÓN DE DATOS INICIALES ---
+
+            # A. Tipos de Servicio
+            c.executemany("INSERT OR IGNORE INTO cat_tipos_servicio (id, descripcion) VALUES (?, ?)", 
+                          [(1,'Viaje en base'),(2,'Telefono base'),(3,'Telefono unidad'),(4,'Viaje aereo')])
+
+            # B. Bases Físicas (1-13) + BASES ESPECIALES (90+)
+            # Nota: Usamos 90+ para que sea fácil distinguir en el código que NO cuentan horas
+            bases_data = [
+                (1,'Cessa'), (2,'Licuor'), (3,'Santiaguito'), (4,'Aurrera'), (5,'Mercado'),
+                (6,'Caros'), (7,'Survi'), (8,'Capulin'), (9,'Zocalo'), (10,'16 de Septiembre'),
+                (11,'Parada Principal'), (12,'Fuera de Servicio'), (13,'En Viaje / Ocupado'),
+                (90, 'Taller 🛠️'), (91, 'Z2 Descanso 🌮'), (92, 'Viaje Foráneo 🛣️'), (93, 'Viaje Local 🏘️')
+            ]
+            c.executemany("INSERT OR IGNORE INTO cat_bases (id, nombre_base) VALUES (?, ?)", bases_data)
+
+            # C. Taxis (35 al 100)
+            # Todos inician en base 12 (Fuera de servicio)
+            taxis_nuevos = [(str(n), 'ACTIVO', 12) for n in range(35, 101)]
+            c.executemany("INSERT OR IGNORE INTO taxis (numero_economico, estado_sistema, base_actual_id) VALUES (?, ?, ?)", taxis_nuevos)
+
+            # D. Contraseña Admin por defecto
+            c.execute("INSERT OR IGNORE INTO configuracion (clave, valor) VALUES ('admin_pass', '1234')")
+
+            conn.commit()
+            conn.close()
+
+            # Asegurar que sea visible en Windows
+            try: ctypes.windll.kernel32.SetFileAttributesW(nombre_db, 0x80)
+            except: pass
+            
+            return True
+        except Exception as e:
+            print(f"Error crítico creando DB: {e}")
+            return False
+
+    # ==========================================
+    # MÉTODOS DE CONSULTA (LO QUE YA TENÍAS)
+    # ==========================================
+    
+    def registrar_nuevo_taxi(self, numero, id_base_inicial=12):
+        try:
+            conn, c = self._conectar()
+            c.execute("INSERT INTO taxis (numero_economico, base_actual_id) VALUES (?, ?)", (numero, id_base_inicial))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception:
+            return False
+
+    def cambiar_estado_taxi(self, taxi_id, nuevo_estado):
+        try:
+            conn, c = self._conectar()
+            c.execute("UPDATE taxis SET estado_sistema = ? WHERE id = ?", (nuevo_estado, taxi_id))
+            conn.commit()
+            conn.close()
+            return True
+        except: return False
 
     def obtener_taxis_activos(self):
-        """Devuelve la lista de taxis que están trabajando (ACTIVOS)."""
-        sql = """
-            SELECT 
-                t.id, 
-                t.numero_economico, 
-                t.base_actual_id,
-                b.nombre_base as estado_texto
-            FROM taxis t
-            LEFT JOIN cat_bases b ON t.base_actual_id = b.id
-            WHERE t.estado_sistema = 'ACTIVO'
-        """
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql)
-            resultados = cursor.fetchall()
-            conexion.close()
-            return [dict(fila) for fila in resultados]
-        except Exception as error:
-            print(f"Error al obtener taxis: {error}")
-            return []
+        conn, c = self._conectar()
+        # Solo traemos taxis ACTIVOS para el tablero
+        c.execute("SELECT * FROM taxis WHERE estado_sistema = 'ACTIVO'")
+        return c.fetchall()
 
-    def obtener_bases(self):
-        """Devuelve la lista de bases (Cessa, Mercado, etc.)"""
-        sql = "SELECT id, nombre_base FROM cat_bases"
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql)
-            resultados = cursor.fetchall()
-            conexion.close()
-            return [dict(fila) for fila in resultados]
-        except Exception as error:
-            print(f"Error al obtener bases: {error}")
-            return []
+    def obtener_toda_la_flota(self):
+        conn, c = self._conectar()
+        c.execute("SELECT * FROM taxis")
+        return c.fetchall()
 
-    
-            return []
-
-    def obtener_ganancias_fecha(self, fecha_str):
-        """
-        Suma todo el dinero ganado en una fecha específica.
-        Formato fecha: 'YYYY-MM-DD' (Ej: '2026-01-17')
-        """
-        sql = "SELECT sum(precio) FROM viajes WHERE fecha_hora_inicio LIKE ?"
-        parametro = f"{fecha_str}%"
-        
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql, (parametro,))
-            resultado = cursor.fetchone()
-            conexion.close()
-            # Si devuelve None (no hubo viajes), retornamos 0.0
-            return resultado[0] if resultado[0] else 0.0
-        except Exception as e:
-            print("Error al calcular ganancias:", e)
-            return 0.0
-
-    # ==========================================
-    # 2. FUNCIONES DE ADMINISTRACIÓN (ALTAS Y BAJAS)
-    # ==========================================
-
-    def registrar_nuevo_taxi(self, numero_economico, id_base_inicial=12):
-        """Crea un nuevo taxi en la base de datos."""
-        sql = "INSERT INTO taxis (numero_economico, base_actual_id, estado_sistema) VALUES (?, ?, 'ACTIVO')"
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql, (numero_economico, id_base_inicial))
-            conexion.commit()
-            conexion.close()
-            print(f"✅ Taxi {numero_economico} creado.")
-            return True
-        except Exception as error:
-            print(f"❌ Error al crear taxi: {error}")
-            return False
-
-    def dar_baja_taxi(self, taxi_id):
-        """Borrado lógico: Desactiva el taxi pero mantiene su historial."""
-        sql = "UPDATE taxis SET estado_sistema = 'BAJA' WHERE id = ?"
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql, (taxi_id,))
-            conexion.commit()
-            conexion.close()
-            print(f"🚫 Taxi {taxi_id} dado de baja.")
-            return True
-        except Exception as e:
-            print("Error al dar de baja:", e)
-            return False
-
-    # ==========================================
-    # 3. FUNCIONES DE OPERACIÓN (MOVIMIENTOS)
-    # ==========================================
-
-    def actualizar_taxi_base(self, taxi_id, base_actual_id):
-        sql = "UPDATE taxis SET base_actual_id = ? WHERE id = ?"
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql, (base_actual_id, taxi_id))
-            conexion.commit() # <--- IMPORTANTE: Esto guarda el archivo en el disco
-            conexion.close()
-            return True
-        except Exception as error:
-            print(f"Error al guardar: {error}")
-            return False
-
-    def registrar_viaje(self, taxi_id, tipo_servicio_id, base_salida_id, destino, precio):
-        """Registra el inicio de un viaje."""
-        fecha_hora_inicio = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        fecha_hora_fin = None
-
-        sql = """
-            INSERT INTO viajes 
-            (taxi_id, tipo_servicio_id, base_salida_id, destino, precio, fecha_hora_inicio, fecha_hora_fin) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """
-        datos = (taxi_id, tipo_servicio_id, base_salida_id, destino, precio, fecha_hora_inicio, fecha_hora_fin)
-
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql, datos)
-            conexion.commit()
-            conexion.close()
-            print(f"✅ Viaje registrado para taxi {taxi_id}")
-            return True
-        except Exception as e:
-            print(f"❌ Error al registrar viaje: {e}")
-            return False
-    
-    def registrar_fin_viaje(self, taxi_id):
-        """Cierra el viaje abierto de un taxi."""
-        fecha_hora_fin = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        sql = """
-            UPDATE viajes
-            SET fecha_hora_fin = ?
-            WHERE taxi_id = ? AND fecha_hora_fin IS NULL
-        """
-        datos = (fecha_hora_fin, taxi_id)
-
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql, datos)
-            conexion.commit()
-            conexion.close()
-            print(f"✅ Viaje cerrado para taxi {taxi_id}")
-            return True
-        except Exception as error:
-            print(f"Error al cerrar viaje: {error}")
-            return False
-
-    # ==========================================
-    # 4. FUNCIONES DE TURNOS (RELOJ CHECADOR)
-    # ==========================================
-
-    def hora_entrada(self, taxi_id):
-        """ Solo abre un turno si NO hay uno abierto ya (evita duplicados al mover entre bases) """
-        try:
-            conexion, cursor = self._conectar()
-            
-            # Verificamos si ya existe un turno abierto para este taxi
-            cursor.execute("SELECT id FROM turnos_trabajo WHERE taxi_id = ? AND fecha_fin IS NULL", (taxi_id,))
-            existe_turno = cursor.fetchone()
-            
-            if existe_turno:
-                conexion.close()
-                return True # Ya está trabajando, no hacemos nada
-            
-            # Si no hay turno abierto, lo creamos
-            fecha_inicio = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            cursor.execute("INSERT INTO turnos_trabajo (taxi_id, fecha_inicio) VALUES (?,?)", (taxi_id, fecha_inicio))
-            
-            conexion.commit()
-            conexion.close()
-            print(f"🕒 Turno abierto para taxi {taxi_id}")
-            return True
-        except Exception as e:
-            print(f"Error en hora_entrada: {e}")
-            return False
-        
-    def hora_salida(self, taxi_id):
-        """Cierra el turno de trabajo abierto."""
-        fecha_fin = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        sql = "UPDATE turnos_trabajo SET fecha_fin = ? WHERE taxi_id = ? AND fecha_fin IS NULL"
-        datos = (fecha_fin, taxi_id)
-
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql, datos)
-            
-            if cursor.rowcount == 0:
-                print(f"⚠️ El taxi {taxi_id} no tenía turno abierto.")
-                conexion.close()
-                return False
-
-            conexion.commit()
-            conexion.close()
-            print(f"🕒 Turno cerrado para taxi {taxi_id}")
-            return True
-        except Exception as error:
-            print("Error al cerrar turno: ", error)
-            return False
-        
+    def obtener_bases_fisicas(self):
+        conn, c = self._conectar()
+        # Solo queremos bases reales (ID < 90) para dibujarlas en el mapa
+        # Las bases 90+ (Taller, Z2) no se dibujan en el grid, van a la derecha o en menús
+        c.execute("SELECT id, nombre_base FROM cat_bases WHERE id <= 13") 
+        return c.fetchall()
 
     def obtener_id_por_numero(self, numero):
-        """Busca el ID de un taxi usando su número económico (ej. 80)"""
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute("SELECT id FROM taxis WHERE numero_economico = ?", (numero,))
-            res = cursor.fetchone()
-            conexion.close()
-            return res['id'] if res else None
-        except:
-            return None
-        
+        conn, c = self._conectar()
+        c.execute("SELECT id FROM taxis WHERE numero_economico = ?", (numero,))
+        res = c.fetchone()
+        return res['id'] if res else None
+
+    def registrar_viaje(self, taxi_id, tipo_serv, base_salida, destino, precio):
+        conn, c = self._conectar()
+        ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        c.execute("""
+            INSERT INTO viajes (taxi_id, tipo_servicio_id, base_salida_id, destino, precio, fecha_hora_inicio)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (taxi_id, tipo_serv, base_salida, destino, precio, ahora))
+        conn.commit()
+        conn.close()
+
     def registrar_fin_viaje(self, taxi_id):
-        """Busca el viaje activo del taxi y pone la fecha_hora_fin"""
-        # CORRECCIÓN: Nombre de columna cambiado a fecha_hora_fin
-        sql = "UPDATE viajes SET fecha_hora_fin = datetime('now') WHERE taxi_id = ? AND fecha_hora_fin IS NULL"
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql, (taxi_id,))
-            
-            # Solo si realmente había un viaje abierto que cerrar
-            if cursor.rowcount > 0:
-                conexion.commit()
-                print(f"🏁 Viaje finalizado en BD para taxi ID: {taxi_id}")
-            
-            conexion.close()
-            return True
-        except Exception as e:
-            # Aquí verás si hay algún otro error de nombre
-            print(f"❌ Error al cerrar viaje en BD: {e}")
-            return False
+        # Cierra el último viaje abierto de ese taxi
+        conn, c = self._conectar()
+        ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Buscamos el último viaje de este taxi que no tenga fecha fin (o sea el mas reciente)
+        # Simplificación: actualizamos el ultimo registro insertado para ese taxi
+        c.execute("""
+            UPDATE viajes 
+            SET fecha_hora_fin = ? 
+            WHERE id = (SELECT MAX(id) FROM viajes WHERE taxi_id = ?)
+        """, (ahora, taxi_id))
+        conn.commit()
+        conn.close()
+
+    def actualizar_taxi_base(self, taxi_id, nueva_base_id):
+        conn, c = self._conectar()
+        c.execute("UPDATE taxis SET base_actual_id = ? WHERE id = ?", (nueva_base_id, taxi_id))
+        conn.commit()
+        conn.close()
+
+    def hora_entrada(self, taxi_id):
+        # Lógica futura para checador
+        pass
+
+    def hora_salida(self, taxi_id):
+        # Lógica futura para checador
+        pass
         
+    def eliminar_base_fisica(self, id_base):
+        try:
+            conn, c = self._conectar()
+            # Mover taxis de esa base a "Fuera de Servicio" (12) antes de borrar
+            c.execute("UPDATE taxis SET base_actual_id = 12 WHERE base_actual_id = ?", (id_base,))
+            c.execute("DELETE FROM cat_bases WHERE id = ?", (id_base,))
+            conn.commit()
+            conn.close()
+            return True
+        except: return False
 
+    def registrar_nueva_base(self, nombre):
+        try:
+            conn, c = self._conectar()
+            c.execute("INSERT INTO cat_bases (nombre_base) VALUES (?)", (nombre,))
+            conn.commit()
+            conn.close()
+            return True
+        except: return False
 
-    # ==========================================
-    # ACTUALIZACIÓN: MEJOR CONSULTA DE HISTORIAL
-    # ==========================================
+    # --- REPORTES ---
+    
     def obtener_historial_viajes(self, filtro="HOY"):
-        """
-        Trae el historial filtrado.
-        Filtros: 'HOY', 'MES', 'ANIO', 'SIEMPRE'
-        """
-        # Consulta Base
-        sql = """
-            SELECT 
-                v.id, 
-                v.fecha_hora_inicio, 
-                v.tipo_servicio_id, 
-                t.numero_economico, 
-                b.nombre_base, 
-                v.destino, 
-                v.precio
+        conn, c = self._conectar()
+        
+        query = """
+            SELECT v.id, v.fecha_hora_inicio, t.numero_economico, 
+                   s.descripcion as nombre_servicio, 
+                   b.nombre_base, v.destino, v.precio, v.tipo_servicio_id
             FROM viajes v
             JOIN taxis t ON v.taxi_id = t.id
+            LEFT JOIN cat_tipos_servicio s ON v.tipo_servicio_id = s.id
             LEFT JOIN cat_bases b ON v.base_salida_id = b.id
         """
         
-        # Aplicamos el filtro mágico de SQLite
-        clausula = ""
+        where_clause = ""
+        fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+        mes_actual = datetime.now().strftime("%Y-%m")
+        anio_actual = datetime.now().strftime("%Y")
+
         if filtro == "HOY":
-            # Compara la fecha del registro con la fecha actual del sistema
-            clausula = "WHERE date(v.fecha_hora_inicio) = date('now', 'localtime')"
+            where_clause = f" WHERE v.fecha_hora_inicio LIKE '{fecha_hoy}%'"
         elif filtro == "MES":
-            # Compara año y mes
-            clausula = "WHERE strftime('%Y-%m', v.fecha_hora_inicio) = strftime('%Y-%m', 'now', 'localtime')"
-        elif filtro == "ANIO":
-            # Compara solo año
-            clausula = "WHERE strftime('%Y', v.fecha_hora_inicio) = strftime('%Y', 'now', 'localtime')"
-        # Si es 'SIEMPRE', no ponemos WHERE (trae todo)
-
-        sql_final = f"{sql} {clausula} ORDER BY v.fecha_hora_inicio DESC"
-
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql_final)
-            resultados = cursor.fetchall()
-            conexion.close()
-            return [dict(fila) for fila in resultados]
-        except Exception as e:
-            print("Error historial:", e)
-            return []
-
-    # ==========================================
-    # NUEVO: FUNCIONES PARA CORREGIR ERRORES
-    # ==========================================
-    def actualizar_viaje(self, viaje_id, columna_db, nuevo_valor):
-        """ Edita un campo específico de un viaje (ej. precio o destino) """
-        sql = f"UPDATE viajes SET {columna_db} = ? WHERE id = ?"
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql, (nuevo_valor, viaje_id))
-            conexion.commit()
-            conexion.close()
-            print(f"✅ Viaje {viaje_id} actualizado: {columna_db} = {nuevo_valor}")
-            return True
-        except Exception as e:
-            print(f"❌ Error al actualizar viaje: {e}")
-            return False
-
+            where_clause = f" WHERE v.fecha_hora_inicio LIKE '{mes_actual}%'"
+        elif filtro == "AÑO":
+            where_clause = f" WHERE v.fecha_hora_inicio LIKE '{anio_actual}%'"
+        
+        c.execute(query + where_clause + " ORDER BY v.id DESC")
+        return c.fetchall()
+        
     def eliminar_viaje(self, viaje_id):
-        """ Borra un viaje definitivamente """
         try:
-            conexion, cursor = self._conectar()
-            cursor.execute("DELETE FROM viajes WHERE id = ?", (viaje_id,))
-            conexion.commit()
-            conexion.close()
-            print(f"🗑️ Viaje {viaje_id} eliminado.")
+            conn, c = self._conectar()
+            c.execute("DELETE FROM viajes WHERE id = ?", (viaje_id,))
+            conn.commit(); conn.close()
             return True
-        except Exception as e:
-            print(f"❌ Error al eliminar viaje: {e}")
-            return False
-        
-    # ==========================================
-    # 5. GESTIÓN DE FLOTA (ADMINISTRACIÓN)
-    # ==========================================
+        except: return False
 
-    def obtener_toda_la_flota(self):
-        """ Devuelve TODOS los taxis (Activos e Inactivos) para la tabla de Admin """
-        sql = "SELECT * FROM taxis ORDER BY numero_economico ASC"
+    def actualizar_viaje(self, viaje_id, columna, valor):
         try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql)
-            res = cursor.fetchall()
-            conexion.close()
-            return [dict(f) for f in res]
-        except Exception as e:
-            print("Error flota:", e)
-            return []
-
-    def cambiar_estado_taxi(self, taxi_id, nuevo_estado):
-        """ 
-        nuevo_estado puede ser 'ACTIVO' o 'INACTIVO'.
-        Si es INACTIVO, desaparecerá del tablero principal.
-        """
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute("UPDATE taxis SET estado_sistema = ? WHERE id = ?", (nuevo_estado, taxi_id))
-            conexion.commit()
-            conexion.close()
+            conn, c = self._conectar()
+            # Validamos columna para evitar inyección SQL básica
+            if columna not in ['destino', 'precio']: return False
+            c.execute(f"UPDATE viajes SET {columna} = ? WHERE id = ?", (valor, viaje_id))
+            conn.commit(); conn.close()
             return True
-        except Exception as e:
-            print("Error cambiar estado:", e)
-            return False
+        except: return False
 
-    def obtener_estadisticas_unidad(self, taxi_id, periodo="DIA", fecha_ref=None):
-        """ Calcula $$$, Viajes y Horas basado en una fecha de referencia """
-        conexion, cursor = self._conectar()
+    def obtener_estadisticas_unidad(self, taxi_id, periodo, fecha_ref=None):
+        conn, c = self._conectar()
         
-        # Si no mandan fecha, usamos hoy
-        if not fecha_ref:
-            from datetime import datetime
-            fecha_ref = datetime.now().strftime("%Y-%m-%d")
-
-        # Clausulas WHERE dinámicas
-        if periodo == "DIA": # Antes era HOY
-            filtro = f"AND date(fecha_hora_inicio) = '{fecha_ref}'"
-            filtro_t = f"AND date(fecha_inicio) = '{fecha_ref}'"
+        # Filtro de fecha
+        filtro_fecha = ""
+        if not fecha_ref: fecha_ref = datetime.now().strftime("%Y-%m-%d")
+        
+        if periodo in ["DIA", "HOY"]:
+            filtro_fecha = f"AND fecha_hora_inicio LIKE '{fecha_ref}%'"
         elif periodo == "MES":
-            # Extraemos YYYY-MM de la fecha seleccionada
-            mes_ref = fecha_ref[:7] 
-            filtro = f"AND strftime('%Y-%m', fecha_hora_inicio) = '{mes_ref}'"
-            filtro_t = f"AND strftime('%Y-%m', fecha_inicio) = '{mes_ref}'"
-        elif periodo == "ANIO":
-            anio_ref = fecha_ref[:4]
-            filtro = f"AND strftime('%Y', fecha_hora_inicio) = '{anio_ref}'"
-            filtro_t = f"AND strftime('%Y', fecha_inicio) = '{anio_ref}'"
-        else:
-            filtro = "" # SIEMPRE
-            filtro_t = ""
+            mes = fecha_ref[:7] # YYYY-MM
+            filtro_fecha = f"AND fecha_hora_inicio LIKE '{mes}%'"
+        elif periodo == "AÑO":
+            anio = fecha_ref[:4] # YYYY
+            filtro_fecha = f"AND fecha_hora_inicio LIKE '{anio}%'"
 
-        # 1. Dinero y Viajes
-        sql_dinero = f"SELECT count(*), sum(precio) FROM viajes WHERE taxi_id = ? {filtro}"
-        cursor.execute(sql_dinero, (taxi_id,))
-        res_dinero = cursor.fetchone()
+        # 1. Ganancia Total y Conteo de Viajes
+        c.execute(f"SELECT SUM(precio), COUNT(*) FROM viajes WHERE taxi_id = ? {filtro_fecha}", (taxi_id,))
+        res = c.fetchone()
+        ganancia = res[0] if res[0] else 0.0
+        viajes = res[1] if res[1] else 0
         
-        # 2. Horas
-        sql_horas = f"SELECT sum((julianday(fecha_fin) - julianday(fecha_inicio)) * 24) FROM turnos_trabajo WHERE taxi_id = ? {filtro_t}"
-        cursor.execute(sql_horas, (taxi_id,))
-        res_horas = cursor.fetchone()
+        # 2. CÁLCULO DE HORAS REALES (Jornada)
+        # Lógica: Hora del último viaje finalizado - Hora del primer viaje iniciado
+        # Esto nos da el "tiempo activo" en el sistema ese día.
+        c.execute(f"""
+            SELECT MIN(fecha_hora_inicio), MAX(fecha_hora_fin) 
+            FROM viajes 
+            WHERE taxi_id = ? {filtro_fecha}
+        """, (taxi_id,))
+        
+        row_horas = c.fetchone()
+        horas_trabajadas = 0.0
+        
+        if row_horas and row_horas[0] and row_horas[1]:
+            try:
+                # Convertimos texto a objetos de fecha para poder restar
+                fmt = "%Y-%m-%d %H:%M:%S"
+                inicio = datetime.strptime(row_horas[0], fmt)
+                fin = datetime.strptime(row_horas[1], fmt)
+                
+                diferencia = fin - inicio
+                # Convertimos segundos totales a horas
+                horas_trabajadas = diferencia.total_seconds() / 3600.0
+                
+                # Si trabajó menos de 15 minutos (ej. un solo viaje corto), ponemos el tiempo real
+                if horas_trabajadas < 0.1: horas_trabajadas = 0.2
+                
+            except Exception as e:
+                print(f"Error calculando horas: {e}")
+                horas_trabajadas = 0.0
+        
+        return {"ganancia": ganancia, "viajes": viajes, "horas": horas_trabajadas}
+    
+    def obtener_datos_tres_graficas(self, taxi_id, periodo, fecha_ref):
+        conn, c = self._conectar()
+        
+        etiquetas = []
+        data_dinero = []
+        data_viajes = []
+        data_horas = []
 
-        conexion.close()
-        
+        try:
+            # 1. Lógica si el filtro es POR DÍA (Ver actividad por horas 00h - 23h)
+            if periodo in ["DIA", "HOY"]:
+                # fecha_ref viene como "2026-01-24"
+                query = """
+                    SELECT strftime('%H', fecha_hora_inicio) as hora, SUM(precio), COUNT(*) 
+                    FROM viajes 
+                    WHERE taxi_id = ? AND fecha_hora_inicio LIKE ?
+                    GROUP BY hora
+                """
+                c.execute(query, (taxi_id, f"{fecha_ref}%"))
+                
+                # Preparamos las 24 horas vacías
+                mapa_datos = {f"{h:02d}": (0,0) for h in range(24)}
+                
+                # Llenamos con lo que encontró la BD
+                for row in c.fetchall():
+                    hora = row[0] # Ej: "09", "14"
+                    mapa_datos[hora] = (row[1], row[2]) # (Dinero, Viajes)
+                
+                # Convertimos a listas ordenadas para la gráfica
+                etiquetas = [f"{h}h" for h in mapa_datos.keys()]
+                data_dinero = [v[0] for v in mapa_datos.values()]
+                data_viajes = [v[1] for v in mapa_datos.values()]
+
+            # 2. Lógica si el filtro es POR MES (Ver actividad por días 1 - 31)
+            elif periodo == "MES":
+                # fecha_ref viene como "2026-01-24", cortamos a "2026-01"
+                mes_str = fecha_ref[:7] 
+                query = """
+                    SELECT strftime('%d', fecha_hora_inicio) as dia, SUM(precio), COUNT(*) 
+                    FROM viajes 
+                    WHERE taxi_id = ? AND fecha_hora_inicio LIKE ?
+                    GROUP BY dia
+                """
+                c.execute(query, (taxi_id, f"{mes_str}%"))
+                
+                # Preparamos días del 1 al 31
+                mapa_datos = {f"{d:02d}": (0,0) for d in range(1, 32)}
+                
+                for row in c.fetchall():
+                    dia = row[0] 
+                    mapa_datos[dia] = (row[1], row[2])
+                
+                etiquetas = list(mapa_datos.keys())
+                data_dinero = [v[0] for v in mapa_datos.values()]
+                data_viajes = [v[1] for v in mapa_datos.values()]
+
+            # 3. Lógica si el filtro es POR AÑO (Ver actividad por meses Ene - Dic)
+            elif periodo == "AÑO":
+                anio_str = fecha_ref[:4] # "2026"
+                query = """
+                    SELECT strftime('%m', fecha_hora_inicio) as mes, SUM(precio), COUNT(*) 
+                    FROM viajes 
+                    WHERE taxi_id = ? AND fecha_hora_inicio LIKE ?
+                    GROUP BY mes
+                """
+                c.execute(query, (taxi_id, f"{anio_str}%"))
+                
+                mapa_datos = {f"{m:02d}": (0,0) for m in range(1, 13)}
+                
+                for row in c.fetchall():
+                    mes = row[0]
+                    mapa_datos[mes] = (row[1], row[2])
+                
+                nombres_meses = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+                etiquetas = nombres_meses
+                data_dinero = [mapa_datos[f"{m:02d}"][0] for m in range(1, 13)]
+                data_viajes = [mapa_datos[f"{m:02d}"][1] for m in range(1, 13)]
+
+            # 4. Cálculo de Horas (Estimado simple por ahora: 30 mins por viaje)
+            # Luego lo conectamos con los tiempos de Taller/Descanso
+            data_horas = [v * 0.5 for v in data_viajes]
+
+        except Exception as e:
+            print(f"Error generando gráficas: {e}")
+            return {"etiquetas": [], "dinero": [], "viajes": [], "horas": []}
+
         return {
-            "viajes": res_dinero[0] if res_dinero[0] else 0,
-            "ganancia": res_dinero[1] if res_dinero[1] else 0.0,
-            "horas": res_horas[0] if res_horas[0] else 0.0
+            "etiquetas": etiquetas,
+            "dinero": data_dinero,
+            "viajes": data_viajes,
+            "horas": data_horas
         }
+    
 
-    def obtener_viajes_por_unidad_y_periodo(self, taxi_id, periodo, fecha_ref=None):
-        """ Trae el detalle para el PDF """
-        if not fecha_ref:
-            from datetime import datetime
-            fecha_ref = datetime.now().strftime("%Y-%m-%d")
+    def obtener_ranking_bases(self, periodo):
+        # Placeholder para gráfica de bases
+        return ["Base A", "Base B"], [10, 5]
 
-        sql = """
-            SELECT v.fecha_hora_inicio, v.tipo_servicio_id, b.nombre_base, v.destino, v.precio
-            FROM viajes v LEFT JOIN cat_bases b ON v.base_salida_id = b.id
+    def obtener_datos_reporte_global(self, periodo, fecha_str):
+        # Placeholder para reporte PDF
+        # Aquí luego haremos la consulta que suma TODO
+        return {"total_dinero": 0, "total_viajes": 0, "top_taxis": []}
+
+    def obtener_viajes_por_unidad_y_periodo(self, taxi_id, periodo, fecha_ref):
+        conn, c = self._conectar()
+        
+        filtro = ""
+        if periodo in ["DIA", "HOY"]: 
+            filtro = f" AND v.fecha_hora_inicio LIKE '{fecha_ref}%'"
+        elif periodo == "MES": 
+            filtro = f" AND v.fecha_hora_inicio LIKE '{fecha_ref[:7]}%'"
+        elif periodo == "AÑO": 
+            filtro = f" AND v.fecha_hora_inicio LIKE '{fecha_ref[:4]}%'"
+        
+        # CONSULTA MEJORADA: Trae el nombre de la base (Cessa, Mercado...) en vez del ID
+        query = """
+            SELECT v.fecha_hora_inicio, v.destino, v.precio, 
+                   b.nombre_base, s.descripcion as tipo_servicio
+            FROM viajes v
+            LEFT JOIN cat_bases b ON v.base_salida_id = b.id
+            LEFT JOIN cat_tipos_servicio s ON v.tipo_servicio_id = s.id
             WHERE v.taxi_id = ?
         """
         
-        if periodo == "DIA":
-            sql += f" AND date(v.fecha_hora_inicio) = '{fecha_ref}'"
-        elif periodo == "MES":
-            sql += f" AND strftime('%Y-%m', v.fecha_hora_inicio) = '{fecha_ref[:7]}'"
-        elif periodo == "ANIO":
-            sql += f" AND strftime('%Y', v.fecha_hora_inicio) = '{fecha_ref[:4]}'"
-            
-        sql += " ORDER BY v.fecha_hora_inicio DESC"
+        c.execute(query + filtro + " ORDER BY v.fecha_hora_inicio ASC", (taxi_id,))
+        filas = c.fetchall()
         
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql, (taxi_id,))
-            res = cursor.fetchall()
-            conexion.close()
-            
-            mapa = {1: "Base", 2: "Tel. Base", 3: "Tel. Unidad", 4: "Aéreo"}
-            return [{
-                "fecha_hora_inicio": r['fecha_hora_inicio'],
-                "concepto": mapa.get(r['tipo_servicio_id'], "Viaje"),
-                "origen": r['nombre_base'] if r['nombre_base'] else "////",
-                "destino": r['destino'],
-                "precio": r['precio']
-            } for r in res]
-        except Exception as e:
-            return []
-        
-    def obtener_datos_grafica(self, taxi_id):
-        """ 
-        Devuelve un diccionario con listas para: 
-        Fechas, Dinero, Viajes y Horas (de los últimos 7 días con actividad)
-        """
-        conexion, cursor = self._conectar()
-        
-        # 1. OBTENER DINERO Y VIAJES (Agrupado por día)
-        sql_viajes = """
-            SELECT substr(fecha_hora_inicio, 1, 10) as fecha, SUM(precio) as total, COUNT(*) as viajes
-            FROM viajes WHERE taxi_id = ? GROUP BY fecha ORDER BY fecha DESC LIMIT 7
-        """
-        cursor.execute(sql_viajes, (taxi_id,))
-        datos_v = cursor.fetchall()
-        
-        # 2. OBTENER HORAS (Agrupado por día)
-        sql_turnos = """
-            SELECT substr(fecha_inicio, 1, 10) as fecha, 
-            SUM((julianday(fecha_fin) - julianday(fecha_inicio)) * 24) as horas
-            FROM turnos_trabajo WHERE taxi_id = ? AND fecha_fin IS NOT NULL
-            GROUP BY fecha ORDER BY fecha DESC LIMIT 7
-        """
-        cursor.execute(sql_turnos, (taxi_id,))
-        datos_t = cursor.fetchall()
-        conexion.close()
-
-        # 3. PROCESAR DATOS (Unificar en un diccionario por fecha)
-        # Creamos un mapa maestro de fechas para combinar tablas
-        mapa_datos = {}
-        
-        # Llenamos con viajes/dinero
-        for d in datos_v:
-            f = d['fecha'][5:] # MM-DD
-            if f not in mapa_datos: mapa_datos[f] = {'dinero':0, 'viajes':0, 'horas':0}
-            mapa_datos[f]['dinero'] = d['total']
-            mapa_datos[f]['viajes'] = d['viajes']
-
-        # Llenamos con horas
-        for d in datos_t:
-            f = d['fecha'][5:]
-            if f not in mapa_datos: mapa_datos[f] = {'dinero':0, 'viajes':0, 'horas':0}
-            mapa_datos[f]['horas'] = d['horas']
-
-        # Ordenar cronológicamente
-        fechas_ord = sorted(mapa_datos.keys())
-        
-        return {
-            "fechas": fechas_ord,
-            "dinero": [mapa_datos[f]['dinero'] for f in fechas_ord],
-            "viajes": [mapa_datos[f]['viajes'] for f in fechas_ord],
-            "horas":  [mapa_datos[f]['horas']  for f in fechas_ord]
-        }
-    
-        """ 
-        Devuelve 2 listas: Fechas y Ganancias de los últimos 7 días con actividad 
-        para pintar la gráfica.
-        """
-        # SQLite: Agrupamos por fecha (YYYY-MM-DD) y sumamos el precio
-        sql = """
-            SELECT 
-                substr(fecha_hora_inicio, 1, 10) as fecha, 
-                SUM(precio) as total
-            FROM viajes 
-            WHERE taxi_id = ?
-            GROUP BY fecha
-            ORDER BY fecha DESC 
-            LIMIT 7
-        """
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql, (taxi_id,))
-            datos = cursor.fetchall()
-            conexion.close()
-            
-            # Ordenamos cronológicamente (de antiguo a nuevo) para la gráfica
-            datos.reverse()
-            
-            # Separamos en dos listas para Matplotlib
-            fechas = [d['fecha'][5:] for d in datos] # Solo mostramos MM-DD para ahorrar espacio
-            dineros = [d['total'] for d in datos]
-            
-            return fechas, dineros
-        except Exception as e:
-            print("Error gráfica:", e)
-            return [], []
-        
-
-    def obtener_datos_tres_graficas(self, taxi_id, periodo, fecha_ref=None):
-        """
-        Genera gráficas respetando la fecha seleccionada en el calendario.
-        """
-        from datetime import datetime
-        import calendar
-
-        # Si no mandan fecha, usamos la del sistema
-        if not fecha_ref:
-            fecha_ref = datetime.now().strftime("%Y-%m-%d")
-
-        if periodo == "DIA": periodo = "HOY"
-
-        conexion, cursor = self._conectar()
-        
-        # Estructuras base
-        etiquetas = []
-        mapa_dinero = {}
-        mapa_viajes = {}
-        mapa_horas = {}
-
-        # --- DEFINIR FILTROS DINÁMICOS CON LA FECHA ---
-        if periodo == "HOY":
-            # Rango: 00 a 23 horas del día seleccionado
-            etiquetas = [f"{h:02d}:00" for h in range(24)]
-            # OJO AQUÍ: Usamos fecha_ref en lugar de 'now'
-            filtro_fecha = f"WHERE taxi_id = ? AND date(fecha_hora_inicio) = '{fecha_ref}'"
-            col_group = "strftime('%H', fecha_hora_inicio)"
-            
-            filtro_turnos = f"WHERE taxi_id = ? AND date(fecha_inicio) = '{fecha_ref}'"
-            col_group_turnos = "strftime('%H', fecha_inicio)"
-
-        elif periodo == "MES":
-            # Rango: Días del mes seleccionado
-            # Truco: Averiguamos cuántos días tiene ESE mes específico
-            anio = int(fecha_ref[:4])
-            mes = int(fecha_ref[5:7])
-            dias_mes = calendar.monthrange(anio, mes)[1]
-            
-            etiquetas = [str(d) for d in range(1, dias_mes + 1)]
-            
-            # Filtramos por el YYYY-MM de la fecha seleccionada
-            mes_ref = fecha_ref[:7]
-            filtro_fecha = f"WHERE taxi_id = ? AND strftime('%Y-%m', fecha_hora_inicio) = '{mes_ref}'"
-            col_group = "strftime('%d', fecha_hora_inicio)"
-            
-            filtro_turnos = f"WHERE taxi_id = ? AND strftime('%Y-%m', fecha_inicio) = '{mes_ref}'"
-            col_group_turnos = "strftime('%d', fecha_inicio)"
-
-        elif periodo == "ANIO":
-            # Rango: Meses del año seleccionado
-            etiquetas = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
-            
-            anio_ref = fecha_ref[:4]
-            filtro_fecha = f"WHERE taxi_id = ? AND strftime('%Y', fecha_hora_inicio) = '{anio_ref}'"
-            col_group = "strftime('%m', fecha_hora_inicio)"
-            
-            filtro_turnos = f"WHERE taxi_id = ? AND strftime('%Y', fecha_inicio) = '{anio_ref}'"
-            col_group_turnos = "strftime('%m', fecha_inicio)"
-        
-        else: 
-            # Caso SIEMPRE (Respaldo)
-            datos_viejos = self.obtener_datos_grafica(taxi_id)
-            conexion.close()
-            return {
-                "etiquetas": datos_viejos.get("fechas", []),
-                "dinero": datos_viejos.get("dinero", []),
-                "viajes": datos_viejos.get("viajes", []),
-                "horas": datos_viejos.get("horas", [])
-            }
-
-        # --- EJECUCIÓN (Igual que antes) ---
-        sql_viajes = f"""
-            SELECT {col_group} as eje_x, SUM(precio) as total, COUNT(*) as viajes
-            FROM viajes 
-            {filtro_fecha}
-            GROUP BY eje_x
-        """
-        cursor.execute(sql_viajes, (taxi_id,))
-        for fila in cursor.fetchall():
-            clave = fila['eje_x']
-            if periodo in ["MES", "ANIO"]: clave = str(int(clave)) 
-            if periodo == "ANIO": clave = etiquetas[int(clave)-1]
-            if periodo == "HOY": clave = f"{clave}:00"
-            mapa_dinero[clave] = fila['total']
-            mapa_viajes[clave] = fila['viajes']
-
-        sql_horas = f"""
-            SELECT {col_group_turnos} as eje_x, 
-            SUM((julianday(fecha_fin) - julianday(fecha_inicio)) * 24) as horas
-            FROM turnos_trabajo 
-            {filtro_turnos} AND fecha_fin IS NOT NULL
-            GROUP BY eje_x
-        """
-        cursor.execute(sql_horas, (taxi_id,))
-        for fila in cursor.fetchall():
-            clave = fila['eje_x']
-            if periodo in ["MES", "ANIO"]: clave = str(int(clave))
-            if periodo == "ANIO": clave = etiquetas[int(clave)-1]
-            if periodo == "HOY": clave = f"{clave}:00"
-            mapa_horas[clave] = fila['horas']
-
-        conexion.close()
-
-        # Rellenar datos
-        data_dinero = [mapa_dinero.get(e, 0) for e in etiquetas]
-        data_viajes = [mapa_viajes.get(e, 0) for e in etiquetas]
-        data_horas  = [mapa_horas.get(e, 0) for e in etiquetas]
-
-        return {"etiquetas": etiquetas, "dinero": data_dinero, "viajes": data_viajes, "horas": data_horas}
-
-    # ==========================================
-    # 6. GESTIÓN DE BASES
-    # ==========================================
-
-    def obtener_bases_fisicas(self):
-        """ Retorna solo las bases reales (excluye 12=Fuera y 13=Viaje) """
-        # Asumimos que 12 y 13 son las especiales.
-        sql = "SELECT id, nombre_base FROM cat_bases WHERE id NOT IN (12, 13) ORDER BY id ASC"
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql)
-            res = cursor.fetchall()
-            conexion.close()
-            # Convertimos a lista de tuplas [(1, 'Cessa'), (2, 'Licuor')...] para que sea compatible
-            return [(fila['id'], fila['nombre_base']) for fila in res]
-        except Exception as e:
-            print("Error obteniendo bases:", e)
-            return []
-
-    def registrar_nueva_base(self, nombre_base):
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute("INSERT INTO cat_bases (nombre_base) VALUES (?)", (nombre_base,))
-            conexion.commit()
-            conexion.close()
-            return True
-        except Exception as e:
-            print("Error al crear base:", e)
-            return False
-
-    def eliminar_base_fisica(self, id_base):
-        """ 
-        Elimina la base. 
-        OJO: Si hay taxis ahí, los mandamos a 'Fuera de Servicio' (12) para que no queden en el limbo.
-        """
-        try:
-            conexion, cursor = self._conectar()
-            
-            # 1. Rescatar taxis: Si están en esa base, moverlos a Fuera de Servicio (12)
-            cursor.execute("UPDATE taxis SET base_actual_id = 12 WHERE base_actual_id = ?", (id_base,))
-            
-            # 2. Borrar la base
-            cursor.execute("DELETE FROM cat_bases WHERE id = ?", (id_base,))
-            
-            conexion.commit()
-            conexion.close()
-            return True
-        except Exception as e:
-            print("Error al eliminar base:", e)
-            return False
-
-    def obtener_ranking_bases(self, filtro="SIEMPRE"):
-        """ Retorna ranking filtrado por tiempo """
-        # Base de la consulta: Ignoramos 12 y 13
-        sql_base = """
-            SELECT b.nombre_base, COUNT(v.id) as total
-            FROM viajes v
-            JOIN cat_bases b ON v.base_salida_id = b.id
-            WHERE b.id NOT IN (12, 13)
-        """
-        
-        # Agregamos el filtro de fecha
-        filtro_sql = ""
-        if filtro == "HOY":
-            filtro_sql = " AND date(v.fecha_hora_inicio) = date('now', 'localtime')"
-        elif filtro == "MES":
-            filtro_sql = " AND strftime('%Y-%m', v.fecha_hora_inicio) = strftime('%Y-%m', 'now', 'localtime')"
-        elif filtro == "ANIO":
-            filtro_sql = " AND strftime('%Y', v.fecha_hora_inicio) = strftime('%Y', 'now', 'localtime')"
-        
-        # Armamos la consulta final
-        sql_final = f"{sql_base} {filtro_sql} GROUP BY b.nombre_base ORDER BY total DESC LIMIT 10"
-
-        try:
-            conexion, cursor = self._conectar()
-            cursor.execute(sql_final)
-            datos = cursor.fetchall()
-            conexion.close()
-            
-            nombres = [d['nombre_base'] for d in datos]
-            viajes = [d['total'] for d in datos]
-            return nombres, viajes
-        except Exception as e:
-            print("Error ranking bases:", e)
-            return [], []
-        
-
-    def obtener_datos_reporte_global(self, periodo, fecha_ref=None):
-        from datetime import datetime
-        
-        if not fecha_ref: fecha_ref = datetime.now().strftime("%Y-%m-%d")
-        
-        conexion, cursor = self._conectar()
-        
-        # 1. FILTROS
-        filtro = ""
-        filtro_turnos = "" 
-        
-        if periodo == "DIA":
-            filtro = f"AND date(fecha_hora_inicio) = '{fecha_ref}'"
-            filtro_turnos = f"AND date(fecha_inicio) = '{fecha_ref}'"
-        elif periodo == "MES":
-            filtro = f"AND strftime('%Y-%m', fecha_hora_inicio) = '{fecha_ref[:7]}'"
-            filtro_turnos = f"AND strftime('%Y-%m', fecha_inicio) = '{fecha_ref[:7]}'"
-        elif periodo == "ANIO":
-            filtro = f"AND strftime('%Y', fecha_hora_inicio) = '{fecha_ref[:4]}'"
-            filtro_turnos = f"AND strftime('%Y', fecha_inicio) = '{fecha_ref[:4]}'"
-        elif periodo == "SIEMPRE":
-            filtro = ""
-            filtro_turnos = ""
-
-        # A. TOTALES
-        cursor.execute(f"SELECT count(*), sum(precio) FROM viajes WHERE 1=1 {filtro}")
-        res_tot = cursor.fetchone()
-        totales = {"viajes": res_tot[0] or 0, "ganancia": res_tot[1] or 0.0}
-
-        # B. BASES POPULARES (Top 5)
-        sql_bases = f"""
-            SELECT b.nombre_base, count(*) as num, b.id
-            FROM viajes v JOIN cat_bases b ON v.base_salida_id = b.id
-            WHERE b.id NOT IN (12, 13) {filtro}
-            GROUP BY b.nombre_base ORDER BY num DESC LIMIT 5
-        """
-        cursor.execute(sql_bases)
-        top_bases = cursor.fetchall() # [(Nombre, Cant, ID), ...]
-
-        # --- NUEVO: HORAS DE ORO POR BASE (El dato cruzado) ---
-        # Para cada una de las Top 5 bases, buscamos su día y hora pico
-        bases_pico_info = []
-        dias_semana = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
-        
-        for base in top_bases:
-            nombre_base = base[0]
-            base_id = base[2]
-            
-            # Buscamos el momento (Dia-Hora) con más viajes para ESTA base
-            # strftime('%w') da 0=Domingo, 1=Lunes...
-            sql_pico_base = f"""
-                SELECT strftime('%w', fecha_hora_inicio) as dia_num, 
-                       strftime('%H', fecha_hora_inicio) as hora, 
-                       count(*) as c
-                FROM viajes 
-                WHERE base_salida_id = ? {filtro}
-                GROUP BY dia_num, hora
-                ORDER BY c DESC LIMIT 1
-            """
-            cursor.execute(sql_pico_base, (base_id,))
-            pico = cursor.fetchone()
-            
-            if pico:
-                dia_txt = dias_semana[int(pico[0])]
-                hora_txt = f"{pico[1]}:00"
-                bases_pico_info.append([nombre_base, dia_txt, hora_txt, pico[2]])
+        datos = []
+        for f in filas:
+            # Si el viaje salió de una base física, ponemos el nombre de la base
+            # Si fue "Teléfono" o "Aéreo", ponemos el tipo de servicio
+            if f["nombre_base"] and f["nombre_base"] not in ["Fuera de Servicio", "En Viaje"]:
+                origen_texto = f["nombre_base"]
             else:
-                bases_pico_info.append([nombre_base, "---", "---", 0])
+                origen_texto = f["tipo_servicio"] or "Desconocido"
 
-        # --- NUEVO: DEMANDA POR DÍA DE LA SEMANA (Lunes a Domingo) ---
-        sql_sem = f"""
-            SELECT strftime('%w', fecha_hora_inicio) as dia, count(*) 
-            FROM viajes WHERE 1=1 {filtro} GROUP BY dia ORDER BY dia ASC
-        """
-        cursor.execute(sql_sem)
-        res_sem = cursor.fetchall()
-        # Rellenar ceros (0=Dom, 6=Sab)
-        mapa_sem = {str(i): 0 for i in range(7)}
-        for r in res_sem: mapa_sem[r[0]] = r[1]
+            datos.append({
+                "fecha": f["fecha_hora_inicio"],
+                "origen": origen_texto,
+                "destino": f["destino"] if f["destino"] else "---",
+                "precio": f["precio"] if f["precio"] else 0.0
+            })
+            
+        return datos
+
+    def eliminar_taxi(self, taxi_id):
+        try:
+            conn, c = self._conectar()
+            # Borramos historial para que no den error las llaves foráneas
+            c.execute("DELETE FROM viajes WHERE taxi_id = ?", (taxi_id,))
+            c.execute("DELETE FROM incidencias WHERE taxi_id = ?", (taxi_id,))
+            # Borramos el taxi
+            c.execute("DELETE FROM taxis WHERE id = ?", (taxi_id,))
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"Error borrando taxi: {e}")
+            return False
         
-        # Ordenar para gráfica: Lun(1) a Dom(0 o 7)
-        # En Python 0 es Domingo. Queremos orden Lun-Dom? O Dom-Sab?
-        # Usemos Lun(1) -> Dom(0) al final
-        orden_dias = ['1','2','3','4','5','6','0']
-        labels_dias = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
-        values_dias = [mapa_sem[d] for d in orden_dias]
-        data_semana = list(zip(labels_dias, values_dias))
 
-
-        # C. TOP DINERO
-        sql_top_dinero = f"""
-            SELECT t.numero_economico, sum(v.precio) as total
-            FROM viajes v JOIN taxis t ON v.taxi_id = t.id
-            WHERE 1=1 {filtro} GROUP BY t.numero_economico ORDER BY total DESC LIMIT 3
-        """
-        cursor.execute(sql_top_dinero)
-        top_dinero = cursor.fetchall()
-
-        # D. TOP VIAJES
-        sql_top_viajes = f"""
-            SELECT t.numero_economico, count(*) as total
-            FROM viajes v JOIN taxis t ON v.taxi_id = t.id
-            WHERE 1=1 {filtro} GROUP BY t.numero_economico ORDER BY total DESC LIMIT 3
-        """
-        cursor.execute(sql_top_viajes)
-        top_viajes = cursor.fetchall()
-
-        # E. TOP HORAS TRABAJADAS
-        sql_top_horas = f"""
-            SELECT tx.numero_economico, sum((julianday(fecha_fin) - julianday(fecha_inicio)) * 24) as horas
-            FROM turnos_trabajo t JOIN taxis tx ON t.taxi_id = tx.id
-            WHERE t.fecha_fin IS NOT NULL {filtro_turnos}
-            GROUP BY tx.numero_economico ORDER BY horas DESC LIMIT 3
-        """
-        cursor.execute(sql_top_horas)
-        top_horas_trabajadas = cursor.fetchall()
-
-        # F. HORAS PICO (Global)
-        sql_pico = f"""
-            SELECT strftime('%H', fecha_hora_inicio) as hr, count(*) 
-            FROM viajes WHERE 1=1 {filtro} GROUP BY hr
-        """
-        cursor.execute(sql_pico)
-        mapa_horas = {f"{h:02d}": 0 for h in range(24)}
-        for r in cursor.fetchall(): mapa_horas[r[0]] = r[1]
-        horas_pico = list(mapa_horas.items())
-
-        conexion.close()
         
-        return {
-            "totales": totales,
-            "bases": top_bases, # (Nombre, Num, ID)
-            "bases_pico": bases_pico_info, # NUEVO: [[Base, Dia, Hora, Cant], ...]
-            "semana": data_semana, # NUEVO: [(Lun, 10), (Mar, 20)...]
-            "top_dinero": top_dinero,
-            "top_viajes": top_viajes,
-            "top_horas": top_horas_trabajadas,
-            "horas_pico": horas_pico
-        }

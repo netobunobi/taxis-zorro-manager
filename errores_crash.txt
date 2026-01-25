@@ -1,11 +1,164 @@
 
 
---- ERROR REGISTRADO: 2026-01-24 12:37:53 ---
+--- ERROR REGISTRADO: 2026-01-24 13:08:28 ---
 Traceback (most recent call last):
-  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 38, in <module>
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 68, in <module>
     from reportes import GeneradorPDF
-  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\reportes.py", line 1, in <module>
-    from reportlab.lib import colors
-ModuleNotFoundError: No module named 'reportlab'
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\reportes.py", line 27
+    """
+    ^^^
+SyntaxError: (unicode error) 'unicodeescape' codec can't decode bytes in position 45-46: truncated \UXXXXXXXX escape
 
 ----------------------------------
+
+ERROR: 2026-01-24 13:35:11.840409
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1730, in exportar_pdf_unidad
+    nombre_pdf = f"Taxi_{numero}_{periodo}_{fecha_str}.pdf"
+                         ^^^^^^
+UnboundLocalError: cannot access local variable 'numero' where it is not associated with a value
+
+---
+
+ERROR: 2026-01-24 13:35:24.359259
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1730, in exportar_pdf_unidad
+    nombre_pdf = f"Taxi_{numero}_{periodo}_{fecha_str}.pdf"
+                         ^^^^^^
+UnboundLocalError: cannot access local variable 'numero' where it is not associated with a value
+
+---
+
+ERROR: 2026-01-24 13:35:24.815002
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1730, in exportar_pdf_unidad
+    nombre_pdf = f"Taxi_{numero}_{periodo}_{fecha_str}.pdf"
+                         ^^^^^^
+UnboundLocalError: cannot access local variable 'numero' where it is not associated with a value
+
+---
+
+ERROR: 2026-01-24 13:35:24.966939
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1730, in exportar_pdf_unidad
+    nombre_pdf = f"Taxi_{numero}_{periodo}_{fecha_str}.pdf"
+                         ^^^^^^
+UnboundLocalError: cannot access local variable 'numero' where it is not associated with a value
+
+---
+
+ERROR: 2026-01-24 13:35:25.111339
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1730, in exportar_pdf_unidad
+    nombre_pdf = f"Taxi_{numero}_{periodo}_{fecha_str}.pdf"
+                         ^^^^^^
+UnboundLocalError: cannot access local variable 'numero' where it is not associated with a value
+
+---
+
+ERROR: 2026-01-24 13:35:25.263002
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1730, in exportar_pdf_unidad
+    nombre_pdf = f"Taxi_{numero}_{periodo}_{fecha_str}.pdf"
+                         ^^^^^^
+UnboundLocalError: cannot access local variable 'numero' where it is not associated with a value
+
+---
+
+ERROR: 2026-01-24 13:35:25.407068
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1730, in exportar_pdf_unidad
+    nombre_pdf = f"Taxi_{numero}_{periodo}_{fecha_str}.pdf"
+                         ^^^^^^
+UnboundLocalError: cannot access local variable 'numero' where it is not associated with a value
+
+---
+
+ERROR: 2026-01-24 13:35:25.550979
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1730, in exportar_pdf_unidad
+    nombre_pdf = f"Taxi_{numero}_{periodo}_{fecha_str}.pdf"
+                         ^^^^^^
+UnboundLocalError: cannot access local variable 'numero' where it is not associated with a value
+
+---
+
+ERROR: 2026-01-24 13:35:25.702961
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1730, in exportar_pdf_unidad
+    nombre_pdf = f"Taxi_{numero}_{periodo}_{fecha_str}.pdf"
+                         ^^^^^^
+UnboundLocalError: cannot access local variable 'numero' where it is not associated with a value
+
+---
+
+
+--- ERROR REGISTRADO: 2026-01-24 15:52:02 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 875, in <module>
+    ventana = VentanaPrincipal()
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 141, in __init__
+    self.init_tablero()
+    ~~~~~~~~~~~~~~~~~^^
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 177, in init_tablero
+    self.lista_viajes.dropEvent = self.evento_drop_viajes
+                                  ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'VentanaPrincipal' object has no attribute 'evento_drop_viajes'
+
+
+
+--- ERROR REGISTRADO: 2026-01-24 15:53:17 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 889, in <module>
+    ventana = VentanaPrincipal()
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 141, in __init__
+    self.init_tablero()
+    ~~~~~~~~~~~~~~~~~^^
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 186, in init_tablero
+    lay_der.addWidget(self.lista_viajes.parentWidget())
+                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+RuntimeError: wrapped C/C++ object of type QListWidget has been deleted
+
+
+
+--- ERROR REGISTRADO: 2026-01-24 15:55:18 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 803, in <module>
+    ventana = VentanaPrincipal()
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 119, in __init__
+    self.init_admin()
+    ~~~~~~~~~~~~~~~^^
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 226, in init_admin
+    p1 = QWidget(); self.construir_pagina_historial(p1)
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 535, in construir_pagina_historial
+    self.tabla_reportes = QTableWidget()
+                          ^^^^^^^^^^^^
+NameError: name 'QTableWidget' is not defined. Did you mean: 'QTabWidget'?
+
+
+
+--- ERROR REGISTRADO: 2026-01-24 17:30:45 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 635, in al_cambiar_pestana_principal
+    if i == 1: self.cargar_historial_en_tabla()
+               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 605, in cargar_historial_en_tabla
+    ids = d.get('tipo_servicio_id', 1)
+          ^^^^^
+AttributeError: 'sqlite3.Row' object has no attribute 'get'
+
+------------------
+
+
+--- ERROR REGISTRADO: 2026-01-24 17:30:48 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 635, in al_cambiar_pestana_principal
+    if i == 1: self.cargar_historial_en_tabla()
+               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 605, in cargar_historial_en_tabla
+    ids = d.get('tipo_servicio_id', 1)
+          ^^^^^
+AttributeError: 'sqlite3.Row' object has no attribute 'get'
+
+------------------
