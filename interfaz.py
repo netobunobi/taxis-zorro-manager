@@ -5,11 +5,10 @@ import traceback
 import sqlite3
 import ctypes
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 import os
-from datetime import datetime
 
 # === IMPORTS DE INTERFAZ GRÁFICA (PyQt6) ===
 from PyQt6.QtWidgets import (
@@ -18,10 +17,10 @@ from PyQt6.QtWidgets import (
     QPushButton, QListWidgetItem, QDialog, QTableWidgetItem, 
     QComboBox, QDateEdit, QMessageBox, QFrame, QHeaderView,
     QLCDNumber, QStackedWidget, QSplashScreen, QFormLayout, QDialogButtonBox, QTableWidget,
-    QScrollArea, QTextEdit,QInputDialog, QCheckBox
+    QScrollArea, QTextEdit,QInputDialog, QCheckBox, QMenu
 )
 from PyQt6.QtCore import Qt, QSize, QDate, QSharedMemory, QTimer, QTime
-from PyQt6.QtGui import QFont, QColor, QPixmap, QPainter, QBrush, QIcon, QPen
+from PyQt6.QtGui import QFont, QColor, QPixmap, QPainter, QBrush, QIcon, QPen, QCursor, QAction
 
 # === IMPORTS DE LIBRERÍAS GRÁFICAS Y REPORTE ===
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -742,19 +741,23 @@ class VentanaPrincipal(QMainWindow):
             self.filtrar_tablas_reportes(texto)
 
     def filtrar_tablas_reportes(self, texto):
-        # Filtramos TABLA DE DEUDAS
-        for r in range(self.tabla_deudas.rowCount()):
-            taxi = self.tabla_deudas.item(r, 1).text().lower()
-            oper = self.tabla_deudas.item(r, 4).text().lower()
-            visible = (texto in taxi) or (texto in oper)
-            self.tabla_deudas.setRowHidden(r, not visible)
-            
-        # Filtramos TABLA DE DISCIPLINA
-        for r in range(self.tabla_morales.rowCount()):
-            taxi = self.tabla_morales.item(r, 1).text().lower()
-            fecha = self.tabla_morales.item(r, 4).text().lower() # Buscador por fecha!
-            visible = (texto in taxi) or (texto in fecha)
-            self.tabla_morales.setRowHidden(r, not visible)
+        texto = texto.lower()
+        
+        # Iteramos sobre las 3 tablas nuevas para aplicar el filtro
+        for tabla in [self.tabla_piso, self.tabla_multas, self.tabla_disciplina]:
+            for r in range(tabla.rowCount()):
+                # Columna 1 siempre es TAXI
+                item_taxi = tabla.item(r, 1)
+                taxi = item_taxi.text().lower() if item_taxi else ""
+                
+                # Columna 2 siempre es TIPO
+                item_tipo = tabla.item(r, 2)
+                tipo = item_tipo.text().lower() if item_tipo else ""
+                
+                # Mostramos si el texto coincide con el taxi o el tipo de reporte
+                visible = (texto in taxi) or (texto in tipo)
+                tabla.setRowHidden(r, not visible)
+
 
     def filtrar_taxis_tablero(self, texto):
         busq = texto.lower().strip()
@@ -1240,116 +1243,534 @@ class VentanaPrincipal(QMainWindow):
     # GESTIÓN reportes (Página 4 Admin)
     # ---------------------------------------------------------
 
+    # =========================================================
+    # SECCIÓN: GESTIÓN DE REPORTES E INCIDENCIAS (NUEVO DISEÑO)
+    # =========================================================
+
     def construir_pagina_incidencias(self, parent):
         layout = QHBoxLayout(parent)
         
-        # --- LADO IZQUIERDO: FORMULARIO ---
-        frame_form = QFrame()
-        frame_form.setFixedWidth(400) # Un poco más ancho para que se vea bien
+        # --- LADO IZQUIERDO: FORMULARIO (Igual que antes) ---
+        frame_form = QFrame(); frame_form.setFixedWidth(400)
         frame_form.setStyleSheet("background-color: #1E293B; border-radius: 10px;")
-        lf = QVBoxLayout(frame_form)
-        lf.setSpacing(15) # Más espacio entre elementos
+        lf = QVBoxLayout(frame_form); lf.setSpacing(12)
         
-        # Estilo para etiquetas grandes
         estilo_lbl = "font-size: 14px; font-weight: bold; color: #94A3B8;"
         estilo_in = "font-size: 14px; padding: 5px; background-color: #0F172A; color: white; border: 1px solid #334155; border-radius: 5px;"
 
-        # Banderola
+        # 1. ZONA INFORMATIVA
+        panel_info = QFrame(); panel_info.setStyleSheet("background-color: #0F172A; border-radius: 8px;")
+        l_info = QVBoxLayout(panel_info)
+        
         banderola_hoy = self.db.calcular_banderola_del_dia()
-        lbl_banderola = QLabel(f"🚩 BANDEROLA HOY: TAXI {banderola_hoy}")
-        lbl_banderola.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_banderola.setStyleSheet("background-color: #F59E0B; color: black; font-weight: bold; font-size: 18px; padding: 10px; border-radius: 5px;")
-        lf.addWidget(lbl_banderola)
-        lf.addSpacing(10)
+        self.lbl_band = QLabel(f"🚩 BANDEROLA HOY: TAXI {banderola_hoy}")
+        self.lbl_band.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_band.setStyleSheet("color: #FACC15; font-weight: bold; font-size: 16px;")
+        
+        self.lbl_cobro_info = QLabel("Cargando...")
+        self.lbl_cobro_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        l_info.addWidget(self.lbl_band); l_info.addWidget(self.lbl_cobro_info)
+        lf.addWidget(panel_info); lf.addSpacing(10)
+        
+        self.actualizar_panel_superior_incidencias()
 
+        # 2. FORMULARIO
         lf.addWidget(QLabel("📝 LEVANTAR REPORTE", styleSheet="font-size: 18px; color: white; font-weight: bold;"))
         
-        self.txt_taxi_reporte = QLineEdit(); self.txt_taxi_reporte.setPlaceholderText("Número Taxi")
-        self.txt_taxi_reporte.setStyleSheet(estilo_in)
+        self.txt_taxi_reporte = QLineEdit(); self.txt_taxi_reporte.setPlaceholderText("Número Taxi"); self.txt_taxi_reporte.setStyleSheet(estilo_in)
         
         self.cmb_tipo_incidencia = QComboBox()
         self.cmb_tipo_incidencia.addItems(["⚠️ Reporte Disciplina", "🛑 Multa Horas", "🚩 Falta Banderolas", "🚫 Ausencia", "💸 Deuda"])
         self.cmb_tipo_incidencia.setStyleSheet(estilo_in)
         
-        # --- CAMBIO IMPORTANTE: CUADRO GRANDE ---
-        self.txt_desc_reporte = QTextEdit() 
-        self.txt_desc_reporte.setPlaceholderText("Escribe aquí los detalles del reporte...")
-        self.txt_desc_reporte.setMaximumHeight(120) # Altura fija grande
-        self.txt_desc_reporte.setStyleSheet(estilo_in)
+        # Conexión inteligente
+        self.cmb_tipo_incidencia.currentTextChanged.connect(self.gestionar_cambio_incidencia)
         
-        self.txt_monto_multa = QLineEdit(); self.txt_monto_multa.setPlaceholderText("Monto $ (0 si es reporte)")
-        self.txt_monto_multa.setText("0")
-        self.txt_monto_multa.setStyleSheet(estilo_in)
+        self.txt_desc_reporte = QTextEdit(); self.txt_desc_reporte.setPlaceholderText("Detalles..."); self.txt_desc_reporte.setMaximumHeight(80); self.txt_desc_reporte.setStyleSheet(estilo_in)
         
-        self.txt_operadora = QLineEdit(); self.txt_operadora.setPlaceholderText("Tu Nombre")
-        self.txt_operadora.setStyleSheet(estilo_in)
+        self.txt_monto_multa = QLineEdit(); self.txt_monto_multa.setPlaceholderText("0"); self.txt_monto_multa.setText("0"); self.txt_monto_multa.setStyleSheet(estilo_in)
+        self.txt_monto_multa.setEnabled(False) 
         
-        btn_guardar = QPushButton("💾 GUARDAR INCIDENCIA")
-        btn_guardar.clicked.connect(self.guardar_incidencia)
-        btn_guardar.setStyleSheet("background-color: #EF4444; color: white; padding: 12px; font-weight: bold; font-size: 14px; border-radius: 5px;")
+        self.txt_operadora = QLineEdit(); self.txt_operadora.setPlaceholderText("Tu Nombre"); self.txt_operadora.setStyleSheet(estilo_in)
         
-        # Agregamos widgets con etiquetas
+        btn_guardar = QPushButton("💾 GUARDAR"); btn_guardar.clicked.connect(self.guardar_incidencia)
+        btn_guardar.setStyleSheet("background-color: #EF4444; color: white; font-weight: bold; padding: 10px;")
+        
         lf.addWidget(QLabel("Unidad:", styleSheet=estilo_lbl)); lf.addWidget(self.txt_taxi_reporte)
-        lf.addWidget(QLabel("Tipo de Problema:", styleSheet=estilo_lbl)); lf.addWidget(self.cmb_tipo_incidencia)
-        lf.addWidget(QLabel("Detalles / Observaciones:", styleSheet=estilo_lbl)); lf.addWidget(self.txt_desc_reporte)
-        lf.addWidget(QLabel("Monto a Cobrar ($):", styleSheet=estilo_lbl)); lf.addWidget(self.txt_monto_multa)
-        lf.addWidget(QLabel("Firma Operadora:", styleSheet=estilo_lbl)); lf.addWidget(self.txt_operadora)
-        lf.addSpacing(10)
+        lf.addWidget(QLabel("Tipo:", styleSheet=estilo_lbl)); lf.addWidget(self.cmb_tipo_incidencia)
+        lf.addWidget(self.txt_desc_reporte)
+        lf.addWidget(QLabel("Monto ($):", styleSheet=estilo_lbl)); lf.addWidget(self.txt_monto_multa)
+        lf.addWidget(QLabel("Operadora:", styleSheet=estilo_lbl)); lf.addWidget(self.txt_operadora)
         lf.addWidget(btn_guardar)
 
-        # LÍNEA DIVISORIA VISUAL
-        linea = QFrame(); linea.setFrameShape(QFrame.Shape.HLine); linea.setStyleSheet("color: #334155;")
-        lf.addWidget(linea); lf.addSpacing(10)
+        lf.addSpacing(10)
         
-        lf.addWidget(QLabel("📅 COBROS ADMINISTRATIVOS", styleSheet="color: #FACC15; font-weight:bold; font-size:14px;"))
+        # BOTONES PISO
+        lf.addWidget(QLabel("📅 COBROS MASIVOS", styleSheet="color: #FACC15; font-weight:bold;"))
+        h_piso = QHBoxLayout()
+        btn_piso = QPushButton("💰 Generar Cobro"); btn_piso.clicked.connect(self.ejecutar_cobro_masivo_piso)
+        btn_piso.setStyleSheet("background-color: #3B82F6; color: white; font-weight: bold; padding: 10px;")
         
-        btn_piso = QPushButton("💰 Generar Cobro Quincenal ($150)")
-        btn_piso.setStyleSheet("background-color: #3B82F6; color: white; font-weight: bold; padding: 10px; border-radius: 5px;")
-        btn_piso.clicked.connect(self.ejecutar_cobro_masivo_piso)
-        lf.addWidget(btn_piso)
+        btn_config = QPushButton("⚙️"); btn_config.setFixedSize(40, 40)
+        btn_config.clicked.connect(self.abrir_menu_configuracion)
+        btn_config.setStyleSheet("background-color: #475569; color: white;")
+        
+        h_piso.addWidget(btn_piso); h_piso.addWidget(btn_config)
+        lf.addLayout(h_piso); lf.addStretch()
 
-
-        lf.addStretch()
+        # --- LADO DERECHO: PESTAÑAS Y AUDITORÍA ---
+        frame_list = QFrame(); ll = QVBoxLayout(frame_list)
         
-        # --- LADO DERECHO: PESTAÑAS ---
-        frame_list = QFrame()
-        ll = QVBoxLayout(frame_list)
-        
+        # === [AQUÍ ESTÁ LA CORRECCIÓN: RESTAURAMOS LA AUDITORÍA] ===
+        # === RESTAURAMOS LA AUDITORÍA (Ajustada a cierre de turno) ===
         h_aud = QHBoxLayout()
-        self.date_auditoria = QDateEdit(); self.date_auditoria.setCalendarPopup(True); self.date_auditoria.setDate(QDate.currentDate().addDays(-1))
+        # CAMBIO: Ahora apunta a HOY por defecto para cierre de turno
+        self.date_auditoria = QDateEdit()
+        self.date_auditoria.setCalendarPopup(True)
+        self.date_auditoria.setDate(QDate.currentDate()) # <--- Día actual
         self.date_auditoria.setStyleSheet(estilo_in)
-        btn_auditar = QPushButton("📋 REVISIÓN DE JORNADA")
-        btn_auditar.setStyleSheet("background-color: #00D1FF; color: black; font-weight: bold; padding: 8px; font-size: 13px;")
+        
+        btn_auditar = QPushButton("📋 CERRAR TURNO (Auditoría)")
+        btn_auditar.setStyleSheet("background-color: #00D1FF; color: black; font-weight: bold; padding: 5px 10px;")
         btn_auditar.clicked.connect(self.ejecutar_auditoria_horas)
-        h_aud.addWidget(QLabel("Revisar día:", styleSheet=estilo_lbl)); h_aud.addWidget(self.date_auditoria); h_aud.addWidget(btn_auditar)
         
-        # SISTEMA DE PESTAÑAS
+        h_aud.addWidget(QLabel("Auditar día:", styleSheet=estilo_lbl))
+        h_aud.addWidget(self.date_auditoria)
+        h_aud.addWidget(btn_auditar)
+        
+        ll.addLayout(h_aud) # <--- La añadimos al layout derecho
+        ll.addSpacing(10)
+        # ==========================================================
+        
         self.tabs_incidencias_panel = QTabWidget()
-        self.tabs_incidencias_panel.setStyleSheet("QTabWidget::pane { border: 1px solid #334155; } QTabBar::tab { font-size: 13px; }")
+        self.tabs_incidencias_panel.setStyleSheet("QTabWidget::pane { border: 1px solid #334155; } QTabBar::tab { background: #1E293B; color: #94A3B8; padding: 8px 15px; } QTabBar::tab:selected { background: #3B82F6; color: white; }")
         
-        # Pestaña 1: COBROS (La que tenías antes)
-        self.tabla_deudas = QTableWidget(); self.tabla_deudas.setColumnCount(6)
-        self.tabla_deudas.setHorizontalHeaderLabels(["ID", "TAXI", "TIPO", "MONTO", "OPER", "COBRAR"])
-        self.tabla_deudas.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.tabla_deudas.setStyleSheet("QTableWidget { background-color: #0F172A; color: white; font-size: 13px; }")
+        self.tabla_piso = QTableWidget(); self.configurar_tabla_cobros(self.tabla_piso)
+        self.tabla_multas = QTableWidget(); self.configurar_tabla_cobros(self.tabla_multas)
+        self.tabla_disciplina = QTableWidget(); self.tabla_disciplina.setColumnCount(6)
+        self.tabla_disciplina.setHorizontalHeaderLabels(["ID", "TAXI", "TIPO", "DETALLE", "FECHA", "GESTIÓN"])
+        self.tabla_disciplina.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch); self.tabla_disciplina.setColumnHidden(0, True); self.tabla_disciplina.setStyleSheet("QTableWidget { background-color: #0F172A; color: white; }")
 
-        # Pestaña 2: DISCIPLINA (Nueva)
-        self.tabla_morales = QTableWidget(); self.tabla_morales.setColumnCount(5)
-        self.tabla_morales.setHorizontalHeaderLabels(["ID", "TAXI", "TIPO", "DETALLES", "FECHA"])
-        self.tabla_morales.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.tabla_morales.setStyleSheet("QTableWidget { background-color: #0F172A; color: white; font-size: 13px; }")
+        pag_historial = QWidget(); lh = QVBoxLayout(pag_historial)
+        hh = QHBoxLayout()
+        self.txt_buscar_hist = QLineEdit(); self.txt_buscar_hist.setPlaceholderText("Buscar..."); self.txt_buscar_hist.setStyleSheet(estilo_in)
+        self.chk_usar_fecha = QCheckBox("Filtrar Fecha"); self.chk_usar_fecha.setStyleSheet("color: white;")
+        self.date_buscar_hist = QDateEdit(); self.date_buscar_hist.setCalendarPopup(True); self.date_buscar_hist.setDate(QDate.currentDate()); self.date_buscar_hist.setStyleSheet(estilo_in)
+        btn_buscar_h = QPushButton("🔍"); btn_buscar_h.clicked.connect(self.cargar_historial_incidencias)
+        hh.addWidget(self.txt_buscar_hist); hh.addWidget(self.chk_usar_fecha); hh.addWidget(self.date_buscar_hist); hh.addWidget(btn_buscar_h)
+        self.tabla_historial = QTableWidget(); self.tabla_historial.setColumnCount(6); self.tabla_historial.setHorizontalHeaderLabels(["FECHA", "TAXI", "TIPO", "MONTO", "ESTADO", "PDF"]); self.tabla_historial.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch); self.tabla_historial.setStyleSheet("QTableWidget { background-color: #0F172A; color: white; }")
+        lh.addLayout(hh); lh.addWidget(self.tabla_historial)
 
-        self.tabs_incidencias_panel.addTab(self.tabla_deudas, "💰 COBROS PENDIENTES")
-        self.tabs_incidencias_panel.addTab(self.tabla_morales, "📋 DISCIPLINA / AUSENCIAS")
-        
-        ll.addLayout(h_aud)
+        self.tabs_incidencias_panel.addTab(self.tabla_piso, "💰 PISO")
+        self.tabs_incidencias_panel.addTab(self.tabla_multas, "💸 MULTAS")
+        self.tabs_incidencias_panel.addTab(self.tabla_disciplina, "📋 DISCIPLINA")
+        self.tabs_incidencias_panel.addTab(pag_historial, "🗄️ HISTORIAL")
+        self.tabs_incidencias_panel.currentChanged.connect(self.al_cambiar_tab_incidencias)
+
         ll.addWidget(self.tabs_incidencias_panel)
-        
         layout.addWidget(frame_form); layout.addWidget(frame_list)
         
-        # Conexión automática de texto
-        self.cmb_tipo_incidencia.currentTextChanged.connect(self.auto_llenar_descripcion_incidencia)
+        # Inicializar estado inicial
+        self.gestionar_cambio_incidencia(self.cmb_tipo_incidencia.currentText())
+
+    def al_cambiar_tab_incidencias(self, idx):
+        # Si es la pestaña 3 (Historial), cargamos el historial
+        if idx == 3:
+            self.cargar_historial_incidencias()
+        else:
+            # Si es cualquier otra (Piso, Multas, Disciplina), recargamos las deudas
+            self.cargar_tabla_deudas()
+
+    def gestionar_cambio_incidencia(self, texto):
+        # 1. Autocompletar Descripción
+        self.auto_llenar_descripcion_incidencia(texto)
+        
+        # 2. Lógica Inteligente de Montos y Unidades
+        
+        # CASO: FALTA BANDEROLAS (Autocompletado de unidad y monto)
+        if "Falta Banderolas" in texto:
+            # Ponemos el monto configurado
+            costo = self.db.obtener_costo_banderola()
+            self.txt_monto_multa.setText(str(costo))
+            self.txt_monto_multa.setEnabled(True)
+            self.txt_monto_multa.setStyleSheet("background-color: #0F172A; color: #FACC15; font-weight: bold; border: 1px solid #FACC15;")
+            
+            # --- NUEVO: Poner el taxi que le toca hoy ---
+            num_banderola = self.db.calcular_banderola_del_dia()
+            self.txt_taxi_reporte.setText(str(num_banderola)) # <--- Lo escribe solito
+            
+        # CASO: BLOQUEO TOTAL (Disciplina o Ausencia)
+        elif "Disciplina" in texto or "Ausencia" in texto:
+            self.txt_monto_multa.setText("0")
+            self.txt_monto_multa.setEnabled(False)
+            self.txt_monto_multa.setStyleSheet("background-color: #334155; color: #94A3B8; border: 1px solid #475569;")
+            # No borramos el taxi aquí por si ya lo habían escrito
+            
+        # CASO: LIBRE
+        else:
+            self.txt_monto_multa.setText("")
+            self.txt_monto_multa.setEnabled(True)
+            self.txt_monto_multa.setStyleSheet("background-color: #0F172A; color: white; border: 1px solid #334155;")
+
+    def abrir_menu_configuracion(self):
+        menu = QMenu(self)
+        menu.setStyleSheet("QMenu { background-color: #1E293B; color: white; border: 1px solid #334155; } QMenu::item:selected { background-color: #3B82F6; }")
+        
+        # Opción 1: Piso
+        accion_piso = QAction("💲 Cambiar Costo Derecho de Piso", self)
+        accion_piso.triggered.connect(self.cambiar_costo_piso)
+        menu.addAction(accion_piso)
+        
+        # Opción 2: Banderola
+        accion_band = QAction("🚩 Cambiar Multa por Banderola", self)
+        accion_band.triggered.connect(self.cambiar_costo_banderola)
+        menu.addAction(accion_band)
+        
+        menu.exec(QCursor.pos())
+
     
+
+    def cambiar_costo_banderola(self):
+        actual = self.db.obtener_costo_banderola()
+        val, ok = QInputDialog.getDouble(self, "Configuración", "Nueva multa por Falta de Banderola:", value=actual, min=0, max=5000, decimals=2)
+        if ok:
+            if self.db.guardar_costo_banderola(val):
+                QMessageBox.information(self, "Guardado", f"La multa ahora es de ${val}")
+                # Si está seleccionada la opción, actualizamos el campo visualmente al momento
+                if "Banderola" in self.cmb_tipo_incidencia.currentText():
+                    self.txt_monto_multa.setText(str(val))
+            else:
+                QMessageBox.warning(self, "Error", "No se pudo guardar.")
+
+
+    def ejecutar_cobro_masivo_piso(self):
+        # 1. CANDADO DE SEGURIDAD (Revisa si ya se cobró hoy)
+        ultimo = self.db.obtener_fecha_ultimo_cobro()
+        hoy_str = datetime.now().strftime("%Y-%m-%d")
+        
+        if ultimo == hoy_str:
+            QMessageBox.critical(self, "⛔ ALTO AHÍ", "¡Ya se generó el cobro de PISO el día de HOY!\n\nEl sistema bloqueó esta acción para evitar cobros dobles.")
+            return
+
+        monto = self.db.obtener_config_piso()
+        resp = QMessageBox.question(self, "Confirmar Cargo", 
+                                    f"¿Estás segura de cobrar ${monto} a TODOS los taxis activos?",
+                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        if resp == QMessageBox.StandardButton.Yes:
+            cant, monto_usado = self.db.generar_cargos_piso_masivos()
+            if cant > 0:
+                QMessageBox.information(self, "Éxito", f"Se cargaron ${monto_usado} a {cant} unidades.")
+                
+                # === AQUÍ ESTÁ LA CLAVE: REFRESCO VISUAL ===
+                self.actualizar_panel_superior_incidencias() # <--- Esto cambia el letrero
+                self.cargar_tabla_deudas()                   # <--- Esto llena la tabla
+            else:
+                QMessageBox.warning(self, "Aviso", "No se generaron cargos.")
+
+    def cargar_tabla_deudas(self):
+        # Limpiar las 3 tablas (Usando el nombre CORRECTO: tabla_disciplina)
+        self.tabla_piso.setRowCount(0)
+        self.tabla_multas.setRowCount(0)
+        self.tabla_disciplina.setRowCount(0) # <--- AQUÍ ESTABA EL ERROR
+        
+        pendientes = self.db.obtener_incidencias_pendientes()
+        hoy = datetime.now()
+
+        for p in pendientes:
+            rid = p['id']; taxi = str(p['numero_economico']); tipo = p['tipo']
+            desc = p['descripcion']; oper = p['operador_id']
+            try: monto = float(p['monto'])
+            except: monto = 0.0
+            
+            # Calculo atraso
+            try:
+                f_reg = datetime.strptime(str(p['fecha_registro']), "%Y-%m-%d %H:%M:%S")
+                dias = (hoy - f_reg).days
+            except: dias = 0
+            
+            txt_atraso = "Al día"
+            color_atraso = "white"
+            if dias > 3: txt_atraso = f"{dias} días"; color_atraso = "#FACC15"
+            if dias > 15: color_atraso = "#EF4444"
+
+            # --- DISTRIBUCIÓN POR PESTAÑA ---
+            
+            # CASO 1: DERECHO DE PISO
+            if "Derecho de Piso" in tipo:
+                self._agregar_fila_cobro(self.tabla_piso, rid, taxi, tipo, monto, oper, txt_atraso, color_atraso, p)
+            
+            # CASO 2: MULTAS Y DEUDAS (Cualquier cosa con dinero que no sea Piso)
+            elif monto > 0:
+                self._agregar_fila_cobro(self.tabla_multas, rid, taxi, tipo, monto, oper, txt_atraso, color_atraso, p)
+            
+            # CASO 3: MORAL / DISCIPLINA (Sin dinero)
+            else:
+                # Usamos self.tabla_disciplina
+                r = self.tabla_disciplina.rowCount(); self.tabla_disciplina.insertRow(r)
+                self.tabla_disciplina.setItem(r,0,QTableWidgetItem(str(rid)))
+                self.tabla_disciplina.setItem(r,1,QTableWidgetItem(taxi))
+                self.tabla_disciplina.setItem(r,2,QTableWidgetItem(tipo))
+                self.tabla_disciplina.setItem(r,3,QTableWidgetItem(desc[:40]))
+                self.tabla_disciplina.setItem(r,4,QTableWidgetItem(str(p['fecha_registro'])[:10]))
+                
+                # BOTÓN ARCHIVAR / REVISADO
+                btn_ok = QPushButton("✅ ARCHIVAR")
+                btn_ok.setStyleSheet("background-color: #3B82F6; color: white; font-weight: bold;")
+                btn_ok.clicked.connect(lambda _, x=rid: self.archivar_reporte(x))
+                self.tabla_disciplina.setCellWidget(r, 5, btn_ok)
+
+    def actualizar_panel_superior_incidencias(self):
+        # 1. Preguntamos a la BD cuándo fue el último cobro
+        ultimo = self.db.obtener_fecha_ultimo_cobro()
+        
+        # Caso A: Nunca se ha cobrado (Sistema nuevo)
+        if not ultimo:
+            self.lbl_cobro_info.setText("📅 Estado: Nunca se ha cobrado")
+            self.lbl_cobro_info.setStyleSheet("color: #94A3B8; font-weight: bold; font-size: 14px;")
+            return
+
+        # Caso B: Ya hay cobros, calculamos fechas
+        try:
+            f_last = datetime.strptime(ultimo, "%Y-%m-%d")
+            f_next = f_last + timedelta(days=15) # La próxima quincena
+            hoy = datetime.now()
+            
+            dias_faltan = (f_next - hoy).days
+            
+            if dias_faltan <= 0:
+                # ALERTA ROJA: Ya pasaron 15 días (o es hoy)
+                self.lbl_cobro_info.setText("⚠️ ¡TOCA COBRAR PISO HOY!")
+                self.lbl_cobro_info.setStyleSheet("color: #EF4444; font-weight: bold; font-size: 16px; border: 2px solid #EF4444; border-radius: 5px; padding: 5px;") 
+            else:
+                # VERDE: Todo bien, faltan días
+                self.lbl_cobro_info.setText(f"📅 Próximo cobro: {f_next.strftime('%d/%m')} (Faltan {dias_faltan} días)")
+                self.lbl_cobro_info.setStyleSheet("color: #10B981; font-weight: bold; font-size: 14px; border: 1px solid #10B981; border-radius: 5px; padding: 5px;") 
+        except Exception as e:
+            print(f"Error calculando fecha: {e}")
+    # --- FUNCIONES AUXILIARES NUEVAS ---
+
+    def configurar_tabla_cobros(self, tabla):
+        tabla.setColumnCount(8)
+        tabla.setHorizontalHeaderLabels(["ID", "TAXI", "TIPO", "MONTO", "OPER", "ATRASO", "COBRAR", "PDF"])
+        tabla.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        tabla.setColumnHidden(0, True) # Ocultar ID
+        tabla.setStyleSheet("QTableWidget { background-color: #0F172A; color: white; gridline-color: #334155; }")
+
+    
+    def cambiar_costo_piso(self):
+        actual = self.db.obtener_config_piso()
+        val, ok = QInputDialog.getDouble(self, "Configuración", "Nuevo costo del Derecho de Piso:", value=actual, min=0, max=5000, decimals=2)
+        if ok:
+            if self.db.guardar_config_piso(val):
+                QMessageBox.information(self, "Guardado", f"El nuevo costo es ${val}")
+            else:
+                QMessageBox.warning(self, "Error", "No se pudo guardar la configuración.")
+
+    
+    def _agregar_fila_cobro(self, tabla, rid, taxi, tipo, monto, oper, txt_atraso, color_atraso, p_full):
+        r = tabla.rowCount(); tabla.insertRow(r)
+        tabla.setItem(r, 0, QTableWidgetItem(str(rid)))
+        tabla.setItem(r, 1, QTableWidgetItem(taxi))
+        tabla.setItem(r, 2, QTableWidgetItem(tipo))
+        
+        it_m = QTableWidgetItem(f"${monto:,.2f}"); it_m.setForeground(QColor("#EF4444"))
+        tabla.setItem(r, 3, it_m)
+        tabla.setItem(r, 4, QTableWidgetItem(oper))
+        
+        it_a = QTableWidgetItem(txt_atraso); it_a.setForeground(QColor(color_atraso))
+        it_a.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        tabla.setItem(r, 5, it_a)
+        
+        # Botón COBRAR
+        btn_pagar = QPushButton("💵 COBRAR")
+        btn_pagar.setStyleSheet("background-color: #10B981; color: white; font-weight: bold; border-radius: 4px;")
+        btn_pagar.clicked.connect(lambda _, x=rid: self.cobrar_deuda(x))
+        tabla.setCellWidget(r, 6, btn_pagar)
+        
+        # Botón PDF
+        btn_pdf = QPushButton("📄")
+        btn_pdf.setStyleSheet("background-color: #EF4444; color: white; font-weight: bold; border-radius: 4px;")
+        btn_pdf.clicked.connect(lambda _, t=taxi, ti=tipo, d=p_full['descripcion'], m=monto, o=oper, f=str(p_full['fecha_registro']): self.reimprimir_ticket(t, ti, d, m, o, f))
+        tabla.setCellWidget(r, 7, btn_pdf)
+
+    def archivar_reporte(self, rid):
+        if QMessageBox.question(self, "Archivar", "¿Marcar este reporte como revisado/leído?\nDesaparecerá de la lista de pendientes.", QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            self.db.marcar_incidencia_resuelta(rid)
+            self.cargar_tabla_deudas()
+
+    def cargar_historial_incidencias(self):
+        txt = self.txt_buscar_hist.text().strip()
+        fecha = self.date_buscar_hist.date().toString("yyyy-MM-dd") if self.chk_usar_fecha.isChecked() else None
+        
+        # Llamamos a la nueva función de DB
+        datos = self.db.obtener_historial_incidencias_filtro(txt, fecha)
+        self.tabla_historial.setRowCount(0)
+        
+        if not datos:
+            return
+
+        for d in datos:
+            # d viene como tupla: (id, numero, tipo, desc, monto, fecha, resuelto, oper)
+            r = self.tabla_historial.rowCount(); self.tabla_historial.insertRow(r)
+            
+            self.tabla_historial.setItem(r, 0, QTableWidgetItem(str(d[5])[:16])) # Fecha
+            self.tabla_historial.setItem(r, 1, QTableWidgetItem(str(d[1])))     # Taxi
+            self.tabla_historial.setItem(r, 2, QTableWidgetItem(str(d[2])))     # Tipo
+            self.tabla_historial.setItem(r, 3, QTableWidgetItem(f"${d[4]:,.2f}")) # Monto
+            
+            estado = d[6] # RESUELTO o PAGADO
+            it_est = QTableWidgetItem(estado)
+            it_est.setForeground(QColor("green"))
+            self.tabla_historial.setItem(r, 4, it_est)
+            
+            # Botón Re-imprimir
+            btn = QPushButton("📄")
+            btn.setStyleSheet("background-color: #64748B; color: white;")
+            # Pasamos datos al lambda: taxi=d[1], tipo=d[2], desc=d[3], monto=d[4], oper=d[7], fecha=d[5]
+            btn.clicked.connect(lambda _, ta=d[1], ti=d[2], de=d[3], mo=d[4], op=d[7], fe=d[5]: self.reimprimir_ticket(ta,ti,de,mo,op,fe))
+            self.tabla_historial.setCellWidget(r, 5, btn)
+
+
+    def configurar_tabla_cobros(self, tabla):
+        tabla.setColumnCount(7)
+        tabla.setHorizontalHeaderLabels(["ID", "TAXI", "CONCEPTO", "MONTO", "ATRASO", "COBRAR", "PDF"])
+        tabla.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        tabla.setColumnHidden(0, True) # Ocultar ID
+        tabla.setStyleSheet("QTableWidget { background-color: #0F172A; color: white; }")
+
+    def ejecutar_cobro_masivo_piso(self):
+        # 1. === EL CANDADO DE SEGURIDAD (EL PORTERO) ===
+        ultimo = self.db.obtener_fecha_ultimo_cobro()
+        hoy_str = datetime.now().strftime("%Y-%m-%d")
+        
+        # Si la fecha guardada en la BD es HOY, no dejamos pasar.
+        if ultimo == hoy_str:
+            QMessageBox.critical(self, "⛔ ALTO AHÍ", "¡Ya se generó el cobro de PISO el día de HOY!\n\nEl sistema bloqueó esta acción para evitar duplicar la deuda a los taxistas.")
+            return
+        # ===============================================
+
+        monto = self.db.obtener_config_piso()
+        resp = QMessageBox.question(self, "Confirmar Cargo", 
+                                    f"¿Estás segura de cobrar ${monto} a TODOS los taxis activos?",
+                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        if resp == QMessageBox.StandardButton.Yes:
+            cant, monto_usado = self.db.generar_cargos_piso_masivos()
+            if cant > 0:
+                QMessageBox.information(self, "Éxito", f"Se cargaron ${monto_usado} a {cant} unidades.")
+                
+                # 2. ACTUALIZACIÓN VISUAL INMEDIATA
+                # Esto obliga al letrero a cambiar de color al instante
+                self.actualizar_panel_superior_incidencias()
+                self.cargar_tabla_deudas()
+            else:
+                QMessageBox.warning(self, "Aviso", "No se generaron cargos.")
+    def cambiar_costo_piso(self):
+        actual = self.db.obtener_config_piso()
+        val, ok = QInputDialog.getDouble(self, "Configuración", "Nuevo costo de Derecho de Piso:", actual, 0, 10000, 2)
+        if ok:
+            if self.db.guardar_config_piso(val):
+                QMessageBox.information(self, "Guardado", f"Nuevo costo establecido: ${val}")
+            else:
+                QMessageBox.warning(self, "Error", "No se pudo guardar.")
+
+    def cargar_tabla_deudas(self):
+        # Limpiar todas
+        self.tabla_piso.setRowCount(0)
+        self.tabla_multas.setRowCount(0)
+        self.tabla_disciplina.setRowCount(0)
+        
+        pendientes = self.db.obtener_incidencias_pendientes()
+        hoy = datetime.now()
+
+        for p in pendientes:
+            rid = p['id']; taxi = str(p['numero_economico']); tipo = p['tipo']
+            monto = float(p['monto']) if p['monto'] else 0.0
+            desc = p['descripcion']; oper = p['operador_id']
+            
+            # Calculo atraso
+            try:
+                f_reg = datetime.strptime(str(p['fecha_registro']), "%Y-%m-%d %H:%M:%S")
+                dias = (hoy - f_reg).days
+            except: dias = 0
+            
+            txt_atraso = "Al día"
+            color_atraso = "white"
+            if dias > 3: txt_atraso = f"{dias} días"; color_atraso = "#FACC15"
+            if dias > 15: color_atraso = "#EF4444"
+
+            # --- DISTRIBUCIÓN POR PESTAÑA ---
+            
+            # CASO 1: DERECHO DE PISO
+            if "Derecho de Piso" in tipo:
+                self._agregar_fila_cobro(self.tabla_piso, rid, taxi, tipo, monto, txt_atraso, color_atraso, p)
+            
+            # CASO 2: MULTAS Y DEUDAS (Cualquier cosa con dinero que no sea Piso)
+            elif monto > 0:
+                self._agregar_fila_cobro(self.tabla_multas, rid, taxi, tipo, monto, txt_atraso, color_atraso, p)
+            
+            # CASO 3: MORAL / DISCIPLINA ($0)
+            else:
+                r = self.tabla_disciplina.rowCount(); self.tabla_disciplina.insertRow(r)
+                self.tabla_disciplina.setItem(r,0,QTableWidgetItem(str(rid)))
+                self.tabla_disciplina.setItem(r,1,QTableWidgetItem(taxi))
+                self.tabla_disciplina.setItem(r,2,QTableWidgetItem(f"{tipo}\n{desc[:30]}..."))
+                self.tabla_disciplina.setItem(r,3,QTableWidgetItem(str(p['fecha_registro'])[:10]))
+                
+                # BOTÓN ARCHIVAR / REVISADO
+                btn_ok = QPushButton("✅ ARCHIVAR")
+                btn_ok.setStyleSheet("background-color: #3B82F6; color: white; font-weight: bold;")
+                btn_ok.clicked.connect(lambda _, x=rid: self.archivar_reporte(x))
+                self.tabla_disciplina.setCellWidget(r, 4, btn_ok)
+
+    def _agregar_fila_cobro(self, tabla, rid, taxi, tipo, monto, txt_atraso, color_atraso, p_full):
+        r = tabla.rowCount(); tabla.insertRow(r)
+        tabla.setItem(r, 0, QTableWidgetItem(str(rid)))
+        tabla.setItem(r, 1, QTableWidgetItem(taxi))
+        tabla.setItem(r, 2, QTableWidgetItem(tipo))
+        
+        it_m = QTableWidgetItem(f"${monto:,.2f}"); it_m.setForeground(QColor("#EF4444"))
+        tabla.setItem(r, 3, it_m)
+        
+        it_a = QTableWidgetItem(txt_atraso); it_a.setForeground(QColor(color_atraso))
+        it_a.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+        tabla.setItem(r, 4, it_a)
+        
+        btn_pagar = QPushButton("💵 COBRAR")
+        btn_pagar.setStyleSheet("background-color: #10B981; color: white; font-weight: bold;")
+        btn_pagar.clicked.connect(lambda _, x=rid: self.cobrar_deuda(x))
+        tabla.setCellWidget(r, 5, btn_pagar)
+        
+        btn_pdf = QPushButton("📄"); btn_pdf.setStyleSheet("background-color: #EF4444; color: white;")
+        # ... (Tu logica de PDF aqui) ...
+        tabla.setCellWidget(r, 6, btn_pdf)
+
+    def archivar_reporte(self, rid):
+        if QMessageBox.question(self, "Archivar", "¿Marcar como revisado/leído?", QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            self.db.marcar_incidencia_resuelta(rid)
+            self.cargar_tabla_deudas()
+
+    def cargar_historial_incidencias(self):
+        txt = self.txt_buscar_hist.text().strip()
+        fecha = self.date_buscar_hist.date().toString("yyyy-MM-dd") if self.chk_usar_fecha.isChecked() else None
+        
+        datos = self.db.obtener_historial_incidencias_filtro(txt, fecha)
+        self.tabla_historial.setRowCount(0)
+        
+        for d in datos:
+            # d = [id, numero, tipo, desc, monto, fecha, resuelto, oper]
+            r = self.tabla_historial.rowCount(); self.tabla_historial.insertRow(r)
+            self.tabla_historial.setItem(r, 0, QTableWidgetItem(str(d[5])[:16]))
+            self.tabla_historial.setItem(r, 1, QTableWidgetItem(str(d[1])))
+            self.tabla_historial.setItem(r, 2, QTableWidgetItem(str(d[2])))
+            self.tabla_historial.setItem(r, 3, QTableWidgetItem(f"${d[4]:,.2f}"))
+            self.tabla_historial.setItem(r, 4, QTableWidgetItem(str(d[6]))) # RESUELTO / PAGADO
+            
+            # Botón PDF Re-impresión
+            btn = QPushButton("📄"); btn.clicked.connect(lambda _, ta=d[1], ti=d[2], de=d[3], mo=d[4], op=d[7], fe=d[5]: self.reimprimir_ticket(ta,ti,de,mo,op,fe))
+            self.tabla_historial.setCellWidget(r, 5, btn)
 
     def ejecutar_auditoria_horas(self):
         # --- PROTECCIÓN: VERIFICAR SI YA SE HIZO HOY ---
@@ -1391,47 +1812,51 @@ class VentanaPrincipal(QMainWindow):
             QMessageBox.information(self, "Aplicado", "Se han generado todos los cargos y reportes.")
 
     def guardar_incidencia(self):
-        num = self.txt_taxi_reporte.text()
+        # 1. Obtener datos actuales
+        num = self.txt_taxi_reporte.text().strip()
         tid = self.db.obtener_id_por_numero(num)
+        
+        # Validaciones de seguridad
         if not tid:
-            QMessageBox.warning(self, "Error", "Taxi no encontrado")
+            QMessageBox.warning(self, "Error", f"El taxi {num} no existe o no está activo.")
             return
             
         tipo = self.cmb_tipo_incidencia.currentText()
+        desc = self.txt_desc_reporte.toPlainText().strip() 
+        oper = self.txt_operadora.text().strip()
         
-        # --- CAMBIO: USAMOS .toPlainText() PARA EL CUADRO GRANDE ---
-        desc = self.txt_desc_reporte.toPlainText() 
-        
-        oper = self.txt_operadora.text()
         if not desc or not oper:
-            QMessageBox.warning(self, "Faltan datos", "Debes poner descripción y tu nombre.")
+            QMessageBox.warning(self, "Faltan datos", "Por favor escribe los detalles y el nombre de la operadora.")
             return
 
-        try: monto = float(self.txt_monto_multa.text())
-        except: monto = 0.0
+        try: 
+            monto = float(self.txt_monto_multa.text())
+        except: 
+            monto = 0.0
         
+        # 2. Intentar guardar en la Base de Datos
         if self.db.registrar_incidencia(tid, tipo, desc, monto, oper):
-            QMessageBox.information(self, "Registrado", "Reporte guardado con éxito.")
+            QMessageBox.information(self, "Listo", "Reporte registrado correctamente.")
             
-            # Limpiar
-            self.txt_desc_reporte.clear(); self.txt_monto_multa.setText("0")
-            self.cargar_tabla_deudas() # Recarga ambas pestañas
-
-    def ejecutar_cobro_masivo_piso(self):
-        # Pregunta de seguridad
-        resp = QMessageBox.question(self, "Confirmar Cargo Masivo", 
-                                    "¿Estás segura de que quieres cobrar $150 a TODOS los taxis activos?\n\nEsto generará una deuda a cada uno.",
-                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        
-        if resp == QMessageBox.StandardButton.Yes:
-            cantidad = self.db.generar_cargos_piso_masivos(150.0)
-            if cantidad > 0:
-                QMessageBox.information(self, "Listo", f"Se aplicó el cargo a {cantidad} unidades activas.")
-                self.cargar_tabla_deudas() # Refrescar la lista
-            else:
-                QMessageBox.warning(self, "Aviso", "No se generaron cargos (¿No hay taxis activos?).")
-
-
+            # === 3. RESETEO TOTAL AL ESTADO DEFAULT ===
+            self.txt_taxi_reporte.clear()              # Unidad vacía
+            self.txt_desc_reporte.clear()              # Descripción vacía
+            
+            # Regresamos el selector al primer índice (Reporte Disciplina)
+            # Esto disparará automáticamente 'gestionar_cambio_incidencia'
+            self.cmb_tipo_incidencia.setCurrentIndex(0) 
+            
+            # Forzamos que el monto sea 0 y esté bloqueado (Estado inicial de Disciplina)
+            self.txt_monto_multa.setText("0")
+            self.txt_monto_multa.setEnabled(False)
+            self.txt_monto_multa.setStyleSheet("background-color: #334155; color: #94A3B8; border: 1px solid #475569;")
+            
+            # El nombre de la operadora NO se toca para que no tengan que escribirlo cada vez
+            
+            # 4. Actualizar la tabla visual
+            self.cargar_tabla_deudas() 
+        else:
+            QMessageBox.critical(self, "Error", "No se pudo guardar en la base de datos.")
 
     def auto_llenar_descripcion_incidencia(self, texto):
         descripciones = {
@@ -1447,108 +1872,7 @@ class VentanaPrincipal(QMainWindow):
         self.txt_desc_reporte.setPlainText(descripciones.get(texto, ""))
 
 
-    def cargar_tabla_deudas(self):
-        # 1. Limpiamos AMBAS tablas
-        self.tabla_deudas.setRowCount(0)
-        self.tabla_morales.setRowCount(0)
-        
-        # Ajustamos columnas (AHORA SON 8 en DEUDAS para incluir ATRASO)
-        self.tabla_deudas.setColumnCount(8) 
-        self.tabla_deudas.setHorizontalHeaderLabels(["ID", "TAXI", "TIPO", "MONTO", "OPER", "ATRASO", "COBRAR", "PDF"])
-        self.tabla_deudas.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        
-        # Tabla Morales: ID, TAXI, TIPO, DETALLES, FECHA, PDF
-        self.tabla_morales.setColumnCount(6)
-        self.tabla_morales.setHorizontalHeaderLabels(["ID", "TAXI", "TIPO", "DETALLES", "FECHA", "PDF"])
-        self.tabla_morales.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        
-        self.tabla_morales.setColumnHidden(0, True) # Ocultar ID
-        self.tabla_deudas.setColumnHidden(0, True)  # Ocultar ID
-
-        # Obtenemos datos
-        pendientes = self.db.obtener_incidencias_pendientes() 
-        
-        # --- AQUÍ DEFINIMOS 'HOY' PARA QUE NO TE DE ERROR ---
-        hoy = datetime.now()
-
-        for p in pendientes:
-            try: monto = float(p['monto'])
-            except: monto = 0.0
-            
-            # Recuperamos datos clave
-            taxi = str(p['numero_economico'])
-            tipo = p['tipo']
-            desc = p['descripcion']
-            oper = p['operador_id']
-            fecha_str = str(p['fecha_registro']) # Viene como string de BD
-
-            # === CÁLCULO DE DÍAS DE ATRASO ===
-            try:
-                # Convertimos el texto de la BD a fecha real
-                fecha_reg = datetime.strptime(fecha_str, "%Y-%m-%d %H:%M:%S")
-                dias_atraso = (hoy - fecha_reg).days
-            except:
-                dias_atraso = 0
-
-            # Lógica visual del atraso
-            txt_atraso = "Al día"
-            color_atraso = "white" # Por defecto blanco
-            
-            if dias_atraso > 0:
-                txt_atraso = f"{dias_atraso} días"
-                if dias_atraso > 3: color_atraso = "#FACC15" # Amarillo > 3 días
-                if dias_atraso > 15: color_atraso = "#EF4444" # Rojo > 15 días (Una quincena)
-
-            # === BOTÓN PDF (Común para ambos) ===
-            btn_pdf = QPushButton("📄 PDF")
-            btn_pdf.setStyleSheet("background-color: #EF4444; color: white; font-weight: bold; border-radius: 4px;")
-            btn_pdf.clicked.connect(lambda _, t=taxi, ti=tipo, d=desc, m=monto, o=oper, f=fecha_str: self.reimprimir_ticket(t, ti, d, m, o, f))
-
-            # === TABLA 1: DINERO ($$$) ===
-            if monto > 0:
-                r = self.tabla_deudas.rowCount(); self.tabla_deudas.insertRow(r)
-                
-                # Columnas 0-4: Datos normales
-                self.tabla_deudas.setItem(r, 0, QTableWidgetItem(str(p['id'])))
-                self.tabla_deudas.setItem(r, 1, QTableWidgetItem(taxi))
-                self.tabla_deudas.setItem(r, 2, QTableWidgetItem(tipo))
-                
-                item_monto = QTableWidgetItem(f"${monto:,.2f}")
-                item_monto.setForeground(QColor("#EF4444")) 
-                self.tabla_deudas.setItem(r, 3, item_monto)
-                
-                self.tabla_deudas.setItem(r, 4, QTableWidgetItem(oper))
-                
-                # Columna 5: ATRASO (NUEVO)
-                it_atraso = QTableWidgetItem(txt_atraso)
-                it_atraso.setForeground(QColor(color_atraso))
-                it_atraso.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.tabla_deudas.setItem(r, 5, it_atraso)
-
-                # Columna 6: COBRAR
-                btn_pagar = QPushButton("💵 COBRAR")
-                btn_pagar.setStyleSheet("background-color: #10B981; color: white; font-weight: bold;")
-                btn_pagar.clicked.connect(lambda _, x=p['id']: self.cobrar_deuda(x))
-                self.tabla_deudas.setCellWidget(r, 6, btn_pagar)
-                
-                # Columna 7: PDF
-                self.tabla_deudas.setCellWidget(r, 7, btn_pdf)
-            
-            # === TABLA 2: DISCIPLINA ($0) ===
-            else:
-                r = self.tabla_morales.rowCount(); self.tabla_morales.insertRow(r)
-                self.tabla_morales.setItem(r, 0, QTableWidgetItem(str(p['id'])))
-                self.tabla_morales.setItem(r, 1, QTableWidgetItem(taxi))
-                
-                t_show = tipo
-                if "Banderola" in tipo: t_show = "🚩 " + tipo
-                elif "Ausencia" in tipo: t_show = "🚫 " + tipo
-                self.tabla_morales.setItem(r, 2, QTableWidgetItem(t_show))
-                
-                self.tabla_morales.setItem(r, 3, QTableWidgetItem(desc))
-                self.tabla_morales.setItem(r, 4, QTableWidgetItem(fecha_str[:16])) 
-                self.tabla_morales.setCellWidget(r, 5, btn_pdf)           
-
+    
     def cobrar_deuda(self, id_incidencia):
         if QMessageBox.question(self, "Cobrar", "¿Confirmar que se recibió el pago?", QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
             self.db.marcar_incidencia_pagada(id_incidencia)
@@ -1714,6 +2038,9 @@ class VentanaPrincipal(QMainWindow):
 
         # 2. OBTENER DATOS
         datos_gral = self.db.obtener_datos_reporte_global(periodo, fecha_str)# Obtenemos el ranking de TODOS los taxis para hacer la sábana
+        # Obtenemos la lista real de la base de datos para la sábana
+        datos_gral['incidencias_lista'] = self.db.obtener_incidencias_globales_periodo(fecha_str, fecha_str) 
+        # ==========================
         # Reusamos la función 'obtener_top_taxis_admin' porque esa ya calcula viajes y dinero de todos
         datos_todos = self.db.obtener_top_taxis_admin(periodo, fecha_str)
         

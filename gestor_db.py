@@ -758,33 +758,23 @@ class GestorBaseDatos:
         
 
     # --- NUEVAS FUNCIONES PARA DERECHO DE PISO Y REPORTE UNIDAD ---
-
-    def generar_cargos_piso_masivos(self, monto=150.0):
+    def obtener_incidencias_globales_periodo(self, fecha_inicio, fecha_fin):
         try:
             conn, c = self._conectar()
-            # 1. Obtenemos solo los taxis ACTIVOS
-            c.execute("SELECT id, numero_economico FROM taxis WHERE estado_sistema = 'ACTIVO'")
-            taxis_activos = c.fetchall()
-            
-            fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            count = 0
-            
-            # 2. Insertamos la deuda a cada uno
-            for t in taxis_activos:
-                # Usamos el tipo "Derecho de Piso" para identificarlo fácil
-                c.execute("""
-                    INSERT INTO incidencias (taxi_id, tipo, descripcion, monto, fecha_registro, resuelto, operador_id)
-                    VALUES (?, '💰 Derecho de Piso', 'Cuota quincenal operativa (Municipio/Base)', ?, ?, 'PENDIENTE', 'SISTEMA')
-                """, (t['id'], monto, fecha))
-                count += 1
-                
-            conn.commit()
-            conn.close()
-            return count
+            query = """
+                SELECT t.numero_economico as unidad, i.tipo, i.descripcion, i.operador_id as operador, i.monto
+                FROM incidencias i
+                JOIN taxis t ON i.taxi_id = t.id
+                WHERE date(i.fecha_registro) BETWEEN ? AND ?
+                AND i.resuelto NOT IN ('RESUELTO', 'PAGADO')
+                ORDER BY i.fecha_registro ASC
+            """
+            c.execute(query, (fecha_inicio, fecha_fin))
+            return [dict(row) for row in c.fetchall()]
         except Exception as e:
-            print(f"Error generando cobros masivos: {e}")
-            return 0
-
+            print(f"Error al obtener incidencias globales: {e}")
+            return []
+    
     def obtener_incidencias_por_unidad(self, taxi_id, periodo="SIEMPRE", fecha_ref=None):
         # Esta función busca multas, reportes y cuotas de un solo taxi
         try:
@@ -792,7 +782,8 @@ class GestorBaseDatos:
             query = """
                 SELECT tipo, descripcion, monto, fecha_registro, resuelto 
                 FROM incidencias 
-                WHERE taxi_id = ?
+                WHERE taxi_id = ? 
+                AND resuelto NOT IN ('RESUELTO', 'PAGADO')
             """
             params = [taxi_id]
             
@@ -813,3 +804,142 @@ class GestorBaseDatos:
         except Exception as e:
             print(f"Error obteniendo incidencias unidad: {e}")
             return []
+        
+
+    # EN LA FUNCIÓN __init__ o donde creas tablas (OJO: Esto se auto-repara, 
+    # pero asegúrate de que interfaz.py llame a verificar_db al inicio)
+    # ...
+    
+    def obtener_config_piso(self):
+        try:
+            conn, c = self._conectar()
+            # Creamos tabla si no existe al vuelo (por si acaso)
+            c.execute("CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT)")
+            
+            c.execute("SELECT valor FROM configuracion WHERE clave='costo_piso'")
+            res = c.fetchone()
+            
+            if res:
+                return float(res['valor'])
+            else:
+                # Valor por defecto
+                c.execute("INSERT INTO configuracion (clave, valor) VALUES ('costo_piso', '150.0')")
+                conn.commit()
+                return 150.0
+            conn.close()
+        except:
+            return 150.0
+
+    def guardar_config_piso(self, nuevo_monto):
+        try:
+            conn, c = self._conectar()
+            c.execute("REPLACE INTO configuracion (clave, valor) VALUES ('costo_piso', ?)", (str(nuevo_monto),))
+            conn.commit(); conn.close()
+            return True
+        except: return False
+
+    def obtener_fecha_ultimo_cobro(self):
+        # Esta función lee la "memoria" para saber cuándo fue el último cobro
+        try:
+            conn, c = self._conectar()
+            # Aseguramos que la tabla exista
+            c.execute("CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT)")
+            
+            c.execute("SELECT valor FROM configuracion WHERE clave='fecha_ultimo_piso'")
+            res = c.fetchone()
+            conn.close()
+            if res: return res['valor'] # Devuelve la fecha "2026-01-25"
+            return None # Nunca se ha cobrado
+        except: return None
+
+    def generar_cargos_piso_masivos(self):
+        monto = self.obtener_config_piso() # Obtiene el precio (ej: 150)
+        try:
+            conn, c = self._conectar()
+            
+            # 1. Obtenemos taxis activos
+            c.execute("SELECT id FROM taxis WHERE estado_sistema = 'ACTIVO'")
+            taxis = c.fetchall()
+            
+            ahora = datetime.now()
+            fecha_hora = ahora.strftime("%Y-%m-%d %H:%M:%S")
+            fecha_corta = ahora.strftime("%Y-%m-%d") # Solo fecha para el candado
+            
+            count = 0
+            # 2. Generamos la deuda a cada uno
+            for t in taxis:
+                c.execute("""
+                    INSERT INTO incidencias (taxi_id, tipo, descripcion, monto, fecha_registro, resuelto, operador_id)
+                    VALUES (?, '💰 Derecho de Piso', 'Cuota operativa', ?, ?, 'PENDIENTE', 'SISTEMA')
+                """, (t['id'], monto, fecha_hora))
+                count += 1
+            
+            # 3. === AQUÍ ESTÁ LA MAGIA (MEMORIA) ===
+            # Guardamos que "hoy" se hizo el cobro
+            c.execute("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES ('fecha_ultimo_piso', ?)", (fecha_corta,))
+            # =======================================
+            
+            conn.commit(); conn.close()
+            return count, monto
+        except Exception as e:
+            print(f"Error: {e}")
+            return 0, 0
+        
+
+    def marcar_incidencia_resuelta(self, id_incidencia):
+        # Sirve para PAGAR o para REVISAR (Archivar)
+        try:
+            conn, c = self._conectar()
+            # Cambiamos estado a RESUELTO (sirve para ambos casos)
+            c.execute("UPDATE incidencias SET resuelto = 'RESUELTO' WHERE id = ?", (id_incidencia,))
+            conn.commit(); conn.close()
+            return True
+        except: return False
+
+    def obtener_historial_incidencias_filtro(self, texto="", fecha=None):
+        # Búsqueda en el historial (YA NO PENDIENTES)
+        try:
+            conn, c = self._conectar()
+            query = """
+                SELECT i.id, t.numero_economico, i.tipo, i.descripcion, i.monto, i.fecha_registro, i.resuelto, i.operador_id
+                FROM incidencias i
+                JOIN taxis t ON i.taxi_id = t.id
+                WHERE i.resuelto != 'PENDIENTE' 
+            """
+            params = []
+            
+            if fecha:
+                query += " AND date(i.fecha_registro) = ?"
+                params.append(fecha)
+            
+            if texto:
+                query += " AND (t.numero_economico LIKE ? OR i.tipo LIKE ?)"
+                params.append(f"%{texto}%")
+                params.append(f"%{texto}%")
+                
+            query += " ORDER BY i.fecha_registro DESC LIMIT 100"
+            
+            c.execute(query, params)
+            datos = c.fetchall()
+            conn.close()
+            return datos
+        except Exception as e:
+            print(e); return []
+        
+    def obtener_costo_banderola(self):
+        try:
+            conn, c = self._conectar()
+            c.execute("SELECT valor FROM configuracion WHERE clave='costo_banderola'")
+            res = c.fetchone()
+            conn.close()
+            if res: return float(res['valor'])
+            return 50.0 # Valor por defecto si no existe
+        except: return 50.0
+
+    def guardar_costo_banderola(self, nuevo_monto):
+        try:
+            conn, c = self._conectar()
+            c.execute("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES ('costo_banderola', ?)", (str(nuevo_monto),))
+            conn.commit(); conn.close()
+            return True
+        except: return False

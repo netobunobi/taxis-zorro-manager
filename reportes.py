@@ -357,75 +357,56 @@ class GeneradorPDF:
         self.elementos.append(t_det)
 
         # ==========================================================
-        # 5. NUEVA SECCIÓN: HISTORIAL DE PAGOS Y SANCIONES (AGREGADA AQUÍ)
+        # 5. SECCIÓN: HISTORIAL DE ADEUDOS Y REPORTES ACTIVOS
         # ==========================================================
         if lista_incidencias and len(lista_incidencias) > 0:
             self.elementos.append(Spacer(1, 30))
             
-            # Título de la sección roja
             estilo_sub_rojo = ParagraphStyle('SubRojo', parent=self.estilos['Heading2'], fontSize=12, textColor=colors.HexColor("#EF4444"), spaceAfter=5)
-            self.elementos.append(Paragraph("HISTORIAL DE PAGOS Y ADEUDOS", estilo_sub_rojo))
+            self.elementos.append(Paragraph("ADEUDOS Y REPORTES PENDIENTES", estilo_sub_rojo))
             
-            # Encabezados
-            head_inc = ["FECHA", "CONCEPTO", "ESTADO", "MONTO"]
+            # Encabezados con columnas separadas
+            head_inc = ["FECHA", "CONCEPTO", "DESCRIPCION", "MONTO"]
             data_inc = [head_inc]
             
             total_deuda_periodo = 0.0
             
             for inc in lista_incidencias:
-                # Recuperamos los datos (Tupla o Diccionario según venga de la BD)
-                # Protegemos el acceso por si viene como tupla o dict
                 try:
-                    tipo = inc['tipo']; desc = inc['descripcion']; monto = inc['monto']
-                    fecha = str(inc['fecha_registro'])[:10]; estado = inc['resuelto']
+                    # Limpieza de texto para evitar errores de PDF (eliminando emojis manuales)
+                    tipo = str(inc['tipo']).replace("⚠️ ", "").replace("🛑 ", "").replace("🚩 ", "").replace("🚫 ", "").replace("💸 ", "").replace("💰 ", "")
+                    desc = str(inc['descripcion'])
+                    monto = inc['monto']
+                    fecha = str(inc['fecha_registro'])[:10]
+                    estado = inc['resuelto']
                 except:
-                    # Fallback si viene como tupla simple (índices)
-                    tipo = inc[0]; desc = inc[1]; monto = inc[2]
-                    fecha = str(inc[3])[:10]; estado = inc[4]
+                    tipo = str(inc[0]); desc = str(inc[1]); monto = inc[2]; fecha = str(inc[3])[:10]; estado = inc[4]
                 
-                # Calcular deuda pendiente
-                if estado == "PENDIENTE":
+                if estado in ['PENDIENTE', 'INFORMATIVO']:
                     total_deuda_periodo += monto
+                    data_inc.append([
+                        fecha,
+                        tipo.upper(),
+                        Paragraph(desc, self.estilos['Normal']),
+                        f"${monto:,.2f}"
+                    ])
 
-                # Descripción corta para la tabla
-                desc_show = desc[:45] + "..." if len(desc)>45 else desc
-                concepto_full = f"<b>{tipo}</b><br/>{desc_show}"
-                
-                data_inc.append([
-                    fecha,
-                    Paragraph(concepto_full, self.estilo_normal),
-                    estado,
-                    f"${monto:,.2f}"
-                ])
-
-            # Tabla Incidencias (Estilo Rojo para diferenciar)
-            t_inc = Table(data_inc, colWidths=[1.2*inch, 3.5*inch, 1.3*inch, 1*inch])
+            # Tabla con anchos ajustados para la descripción
+            t_inc = Table(data_inc, colWidths=[1.0*inch, 1.5*inch, 3.5*inch, 1.0*inch])
             
             t_inc.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#EF4444")), # Encabezado ROJO
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#EF4444")),
                 ('TEXTCOLOR', (0,0), (-1,0), colors.white),
                 ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-                ('ALIGN', (-1,0), (-1,-1), 'RIGHT'), # Monto a la derecha
+                ('ALIGN', (0,0), (1,-1), 'LEFT'),
+                ('ALIGN', (-1,0), (-1,-1), 'RIGHT'),
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
                 ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                ('PADDING', (0,0), (-1,-1), 6),
+                ('FONTSIZE', (0,1), (-1,-1), 9),
             ]))
-            
-            # Colorear los PENDIENTES
-            for i, row in enumerate(data_inc[1:]): 
-                estado_row = row[2] 
-                if estado_row == "PENDIENTE":
-                    t_inc.setStyle(TableStyle([
-                        ('TEXTCOLOR', (2, i+1), (2, i+1), colors.red), 
-                        ('FONTNAME', (2, i+1), (2, i+1), 'Helvetica-Bold'),
-                    ]))
-                else:
-                    t_inc.setStyle(TableStyle([
-                        ('TEXTCOLOR', (2, i+1), (2, i+1), colors.green), 
-                    ]))
 
             self.elementos.append(t_inc)
+            # ... resto del pie de página ...
             
             # Total Deuda
             if total_deuda_periodo > 0:
