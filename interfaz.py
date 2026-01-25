@@ -1,5 +1,6 @@
 import sys
 import os
+import shutil
 import traceback
 import sqlite3
 import ctypes
@@ -20,7 +21,7 @@ from PyQt6.QtWidgets import (
     QScrollArea, QTextEdit,QInputDialog
 )
 from PyQt6.QtCore import Qt, QSize, QDate, QSharedMemory, QTimer, QTime
-from PyQt6.QtGui import QFont, QColor, QPixmap
+from PyQt6.QtGui import QFont, QColor, QPixmap, QPainter, QBrush, QIcon, QPen
 
 # === IMPORTS DE LIBRERÍAS GRÁFICAS Y REPORTE ===
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -134,6 +135,10 @@ class VentanaPrincipal(QMainWindow):
         
         self.cargar_datos_en_tablero()
 
+        self.timer_semaforo = QTimer(self)
+        self.timer_semaforo.timeout.connect(self.cargar_datos_en_tablero)
+        self.timer_semaforo.start(60000)
+
     # ---------------------------------------------------------
     # PESTAÑA 1: TABLERO DE CONTROL (NO TOCAR - ESTÁ BIEN)
     # ---------------------------------------------------------
@@ -208,7 +213,7 @@ class VentanaPrincipal(QMainWindow):
             lista.setStyleSheet(f"""
                 QListWidget {{ background: transparent; border: none; }} 
                 QListWidget::item {{ 
-                    background-color: {color_bg}; color: white; border-bottom: 1px solid {color_border}; 
+                    color: white; border-bottom: 1px solid {color_border}; 
                     border-radius: 8px; padding: 2px; font-weight: bold; font-size: 14px; 
                 }}
                 QListWidget::item:selected {{ background-color: {color_border}; color: black; }}
@@ -375,7 +380,7 @@ class VentanaPrincipal(QMainWindow):
             
             lista.setStyleSheet("""
                 QListWidget { background: transparent; border: none; }
-                QListWidget::item { background-color: #334155; border: 2px solid #475569; border-radius: 8px; color: white; font-weight: bold; font-size: 16px; }
+                QListWidget::item { border: 2px solid #475569; border-radius: 8px; color: white; font-weight: bold; font-size: 16px; }
             """)
 
             self.listas_bases[id_base] = lista
@@ -387,17 +392,38 @@ class VentanaPrincipal(QMainWindow):
 
     def cargar_datos_en_tablero(self):
         self.cargando_datos = True 
-        for lista in self.listas_bases.values():
+        
+        # --- FABRICANTE DE FICHAS ---
+        def crear_chip_visual(numero, color_hex, texto_negro=False):
+            size = 85
+            pixmap = QPixmap(size, size)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            # Fondo Redondeado
+            color = QColor(color_hex)
+            painter.setBrush(QBrush(color))
+            # Borde sutil para definición
+            painter.setPen(QPen(QColor("rgba(0,0,0,0.15)"), 1)) 
+            painter.drawRoundedRect(2, 2, size-4, size-4, 14, 14)
+            
+            # Número
+            painter.setPen(QColor("black") if texto_negro else QColor("white"))
+            font = QFont("Segoe UI", 22, QFont.Weight.Bold)
+            painter.setFont(font)
+            painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, str(numero))
+            
+            painter.end()
+            return QIcon(pixmap)
+
+        # 1. LIMPIEZA
+        for id_base, lista in self.listas_bases.items():
             lista.clear()
-            # Estilos
-            lista.setStyleSheet("""
-                QListWidget { border: 1px solid #1E293B; background-color: rgba(30, 41, 59, 0.5); border-radius: 10px; }
-                QListWidget::item { background-color: #B28900; color: white; border: 2px solid #00D1FF; border-radius: 10px; margin: 2px; }
-                QListWidget::item:selected { background-color: #FFD700; color: black; }
-            """)
-            lista.setViewMode(QListWidget.ViewMode.IconMode)
-            lista.setResizeMode(QListWidget.ResizeMode.Adjust)
-            lista.setSpacing(6) 
+            lista.setStyleSheet("QListWidget { background: transparent; border: none; }")
+            lista.setIconSize(QSize(85, 85)) 
+            lista.setSpacing(4)
 
         taxis = self.db.obtener_taxis_activos()
         ahora = datetime.now()
@@ -405,46 +431,83 @@ class VentanaPrincipal(QMainWindow):
         for taxi in taxis:
             bid = taxi['base_actual_id']
             if bid in self.listas_bases:
-                txt_mostrar = str(taxi['numero_economico'])
-                item = TaxiItem(txt_mostrar)
+                num_taxi = str(taxi['numero_economico'])
                 
-                # --- ALERTA VISUAL (Solo en Descanso 91) ---
-                bg_color = QColor("#B28900") 
-                
-                if bid == 91: 
-                    t_mov = taxi['fecha_movimiento'] 
-                    if t_mov:
-                        try:
-                            dt_mov = datetime.strptime(t_mov, "%Y-%m-%d %H:%M:%S")
-                            minutos = (ahora - dt_mov).total_seconds() / 60
-                            
-                            # MÁS DE 2 HORAS (120 MIN) -> NARANJA
-                            if minutos > 120:
-                                bg_color = QColor("#F97316")
-                                txt_mostrar += "\n⏳ TIEMPO"
-                                item.setToolTip(f"Lleva {int(minutos)} minutos en descanso")
-                        except: pass
+                # --- REGLA DE ORO: SIEMPRE AMARILLO ---
+                color_hex = "#FACC15" # Amarillo Taxi
+                texto_negro = True    # Texto negro para contraste con amarillo
+                tooltip_txt = "Normal"
 
-                item.setBackground(bg_color)
-                if bg_color == QColor("#F97316"): item.setForeground(QColor("white"))
+                # Calcular Tiempo
+                minutos = 0
+                if taxi['fecha_movimiento']:
+                    try:
+                        dt_mov = datetime.strptime(taxi['fecha_movimiento'], "%Y-%m-%d %H:%M:%S")
+                        minutos = (ahora - dt_mov).total_seconds() / 60
+                    except: pass
                 
-                # Configuración Item
-                f = QFont(); f.setPointSize(14); f.setBold(True)
-                item.setFont(f); item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                item.setSizeHint(QSize(65, 65))
+                # --- SEMÁFORO (ÚNICA RAZÓN PARA CAMBIAR COLOR) ---
+                
+                # A) LOCAL (30m / 45m)
+                if bid == 93: 
+                    if minutos > 45: 
+                        color_hex = "#EF4444"; texto_negro = False; tooltip_txt = "DEMORA CRÍTICA" # Rojo
+                    elif minutos > 30: 
+                        color_hex = "#F97316"; texto_negro = True; tooltip_txt = "Retraso Leve"    # Naranja
+
+                # B) FORÁNEO (90m / 120m)
+                elif bid == 92: 
+                    if minutos > 120: 
+                        color_hex = "#EF4444"; texto_negro = False; tooltip_txt = "URGENTE"
+                    elif minutos > 90: 
+                        color_hex = "#F97316"; texto_negro = True; tooltip_txt = "Retraso Leve"
+
+                # C) DESCANSO (60m / 90m)
+                elif bid == 91:
+                    if minutos > 180: # Auto-cierre
+                        self.db.actualizar_taxi_base(taxi['id'], 12)
+                        self.db.cerrar_turno(taxi['id'])
+                        continue
+                    if minutos > 90: 
+                        color_hex = "#EF4444"; texto_negro = False; tooltip_txt = "Exceso Descanso"
+                    elif minutos > 60: 
+                        color_hex = "#F97316"; texto_negro = True; tooltip_txt = "Tiempo Límite"
+
+                # 4. CREAR FICHA
+                icon_chip = crear_chip_visual(num_taxi, color_hex, texto_negro)
+                
+                item = TaxiItem("") 
+                item.setIcon(icon_chip)
+                item.setToolTip(f"Unidad {num_taxi}\n{tooltip_txt}\n{int(minutos)} min")
+                
+                # Datos ocultos
                 item.setData(Qt.ItemDataRole.UserRole, taxi['id'])
+                item.setText(num_taxi); item.setForeground(QColor("transparent")) 
+                
+                item.setSizeHint(QSize(90, 90)) 
                 
                 self.listas_bases[bid].addItem(item)
 
         self.cargando_datos = False
 
-
     def detectar_cambio_base(self, lista_destino, indice):
-        # SEMÁFORO: Si estamos llenando datos al inicio, NO hacer nada
+        # Si el sistema está cargando datos masivos, no interrumpir
         if self.cargando_datos: 
             return 
 
-        QTimer.singleShot(50, lambda: self._ejecutar_actualizacion_bd(lista_destino, indice))
+        # Usamos un timer muy corto para dejar que la animación de "soltar" termine
+        # y luego procesamos la lógica y REFRESCOMOS EL TABLERO
+        QTimer.singleShot(50, lambda: self._procesar_y_refrescar(lista_destino, indice))
+
+    def _procesar_y_refrescar(self, lista_destino, indice_item):
+        """ Función auxiliar que guarda el cambio y PINTA DE NUEVO EL TABLERO """
+        
+        # 1. EJECUTAR LA LÓGICA DE BASE DE DATOS (Lo que ya tenías)
+        self._ejecutar_actualizacion_bd(lista_destino, indice_item)
+        
+        # 2. ¡EL SECRETO! FORZAR RE-PINTADO INMEDIATO
+        # Esto hará que el taxi evalúe su nuevo estado (Base/Fuera) y se ponga Amarillo/Gris al instante.
+        self.cargar_datos_en_tablero()
 
 
 
@@ -559,10 +622,34 @@ class VentanaPrincipal(QMainWindow):
 
     def busqueda_unificada(self, texto):
         idx = self.tabs.currentIndex()
-        if idx == 0: self.filtrar_taxis_tablero(texto)
-        elif idx == 1:
-            sub = self.paginas_admin.currentIndex()
-            if sub == 0: self.filtrar_tabla_historial(texto)
+        texto = texto.lower().strip()
+        
+        # 1. TABLERO
+        if idx == 0: 
+            self.filtrar_taxis_tablero(texto)
+            
+        # 2. ADMIN > HISTORIAL
+        elif idx == 1 and self.paginas_admin.currentIndex() == 0:
+            self.filtrar_tabla_historial(texto)
+            
+        # 3. ADMIN > REPORTES/INCIDENCIAS (Nueva Lógica)
+        elif idx == 1 and self.paginas_admin.currentIndex() == 4:
+            self.filtrar_tablas_reportes(texto)
+
+    def filtrar_tablas_reportes(self, texto):
+        # Filtramos TABLA DE DEUDAS
+        for r in range(self.tabla_deudas.rowCount()):
+            taxi = self.tabla_deudas.item(r, 1).text().lower()
+            oper = self.tabla_deudas.item(r, 4).text().lower()
+            visible = (texto in taxi) or (texto in oper)
+            self.tabla_deudas.setRowHidden(r, not visible)
+            
+        # Filtramos TABLA DE DISCIPLINA
+        for r in range(self.tabla_morales.rowCount()):
+            taxi = self.tabla_morales.item(r, 1).text().lower()
+            fecha = self.tabla_morales.item(r, 4).text().lower() # Buscador por fecha!
+            visible = (texto in taxi) or (texto in fecha)
+            self.tabla_morales.setRowHidden(r, not visible)
 
     def filtrar_taxis_tablero(self, texto):
         busq = texto.lower().strip()
@@ -1244,64 +1331,95 @@ class VentanaPrincipal(QMainWindow):
 
 
     def cargar_tabla_deudas(self):
-        # 1. Limpiamos AMBAS tablas para empezar de cero
+        # 1. Limpiamos AMBAS tablas
         self.tabla_deudas.setRowCount(0)
         self.tabla_morales.setRowCount(0)
         
-        # Ahora obtenemos TODO (gracias al cambio en gestor_db.py)
+        # Ajustamos columnas para que quepa el botón PDF
+        # Tabla Deudas: ID, TAXI, TIPO, MONTO, OPER, COBRAR, PDF
+        self.tabla_deudas.setColumnCount(7) 
+        self.tabla_deudas.setHorizontalHeaderLabels(["ID", "TAXI", "TIPO", "MONTO", "OPER", "COBRAR", "PDF"])
+        self.tabla_deudas.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        
+        # Tabla Morales: ID, TAXI, TIPO, DETALLES, FECHA, PDF
+        self.tabla_morales.setColumnCount(6)
+        self.tabla_morales.setHorizontalHeaderLabels(["ID", "TAXI", "TIPO", "DETALLES", "FECHA", "PDF"])
+        self.tabla_morales.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.tabla_morales.setColumnHidden(0, True) # Ocultar ID
+        self.tabla_deudas.setColumnHidden(0, True)  # Ocultar ID
+
+        # Obtenemos datos
         pendientes = self.db.obtener_incidencias_pendientes() 
         
         for p in pendientes:
             try: monto = float(p['monto'])
             except: monto = 0.0
             
-            # === SI HAY DINERO ($$$) -> VA A PESTAÑA CAJA ===
+            # Recuperamos datos clave para el PDF
+            taxi = str(p['numero_economico'])
+            tipo = p['tipo']
+            desc = p['descripcion']
+            oper = p['operador_id'] # NOMBRE DE LA OPERADORA
+            fecha = str(p['fecha_registro'])
+
+            # === BOTÓN PDF (Común para ambos) ===
+            btn_pdf = QPushButton("📄 PDF")
+            btn_pdf.setStyleSheet("background-color: #EF4444; color: white; font-weight: bold; border-radius: 4px;")
+            # Usamos lambda para pasar TODOS los datos necesarios al generador
+            btn_pdf.clicked.connect(lambda _, t=taxi, ti=tipo, d=desc, m=monto, o=oper, f=fecha: self.reimprimir_ticket(t, ti, d, m, o, f))
+
+            # === TABLA 1: DINERO ($$$) ===
             if monto > 0:
                 r = self.tabla_deudas.rowCount(); self.tabla_deudas.insertRow(r)
                 self.tabla_deudas.setItem(r, 0, QTableWidgetItem(str(p['id'])))
-                self.tabla_deudas.setItem(r, 1, QTableWidgetItem(str(p['numero_economico'])))
-                self.tabla_deudas.setItem(r, 2, QTableWidgetItem(p['tipo']))
+                self.tabla_deudas.setItem(r, 1, QTableWidgetItem(taxi))
+                self.tabla_deudas.setItem(r, 2, QTableWidgetItem(tipo))
                 
-                # Color Rojo para el dinero
                 item_monto = QTableWidgetItem(f"${monto:,.2f}")
                 item_monto.setForeground(QColor("#EF4444")) 
                 self.tabla_deudas.setItem(r, 3, item_monto)
                 
-                self.tabla_deudas.setItem(r, 4, QTableWidgetItem(p['operador_id']))
+                self.tabla_deudas.setItem(r, 4, QTableWidgetItem(oper))
                 
-                # Botón Cobrar
                 btn_pagar = QPushButton("💵 COBRAR")
                 btn_pagar.setStyleSheet("background-color: #10B981; color: white; font-weight: bold;")
                 btn_pagar.clicked.connect(lambda _, x=p['id']: self.cobrar_deuda(x))
                 self.tabla_deudas.setCellWidget(r, 5, btn_pagar)
+                self.tabla_deudas.setCellWidget(r, 6, btn_pdf) # Botón PDF
             
-            # === SI ES $0 (REPORTE MORAL) -> VA A PESTAÑA DISCIPLINA ===
+            # === TABLA 2: DISCIPLINA ($0) ===
             else:
                 r = self.tabla_morales.rowCount(); self.tabla_morales.insertRow(r)
                 self.tabla_morales.setItem(r, 0, QTableWidgetItem(str(p['id'])))
-                self.tabla_morales.setItem(r, 1, QTableWidgetItem(str(p['numero_economico'])))
+                self.tabla_morales.setItem(r, 1, QTableWidgetItem(taxi))
                 
-                # Icono visual según el tipo
-                t = p['tipo']
-                if "Banderola" in t: t = "🚩 " + t
-                elif "Ausencia" in t: t = "🚫 " + t
+                t_show = tipo
+                if "Banderola" in tipo: t_show = "🚩 " + tipo
+                elif "Ausencia" in tipo: t_show = "🚫 " + tipo
+                self.tabla_morales.setItem(r, 2, QTableWidgetItem(t_show))
                 
-                self.tabla_morales.setItem(r, 2, QTableWidgetItem(t))
-                
-                # Descripción completa
-                item_desc = QTableWidgetItem(p['descripcion'])
-                item_desc.setToolTip(p['descripcion']) # Para leer completo si pasan el mouse
-                self.tabla_morales.setItem(r, 3, item_desc)
-                
-                # Fecha (Solo mostramos la fecha y hora corta)
-                self.tabla_morales.setItem(r, 4, QTableWidgetItem(str(p['fecha_registro'])[:16]))
-
+                self.tabla_morales.setItem(r, 3, QTableWidgetItem(desc))
+                self.tabla_morales.setItem(r, 4, QTableWidgetItem(fecha[:16])) # Fecha Corta
+                self.tabla_morales.setCellWidget(r, 5, btn_pdf) # Botón PDF
                 
 
     def cobrar_deuda(self, id_incidencia):
         if QMessageBox.question(self, "Cobrar", "¿Confirmar que se recibió el pago?", QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
             self.db.marcar_incidencia_pagada(id_incidencia)
             self.cargar_tabla_deudas()
+
+    def reimprimir_ticket(self, taxi, tipo, desc, monto, oper, fecha_orig):
+        # Generar nombre de archivo único
+        nombre = f"Copia_Reporte_{taxi}_{datetime.now().strftime('%H%M%S')}.pdf"
+        
+        try:
+            gen = GeneradorPDF(nombre)
+            # Pasamos fecha_orig para que salga la fecha real del incidente
+            gen.generar_ticket_incidencia(taxi, tipo, desc, monto, oper, fecha_personalizada=fecha_orig)
+            
+            QMessageBox.information(self, "PDF Generado", f"Se ha reimpreso el reporte de la unidad {taxi}.")
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"No se pudo crear el PDF: {e}")
 
     
     def generar_pdf_incidencia(self, taxi, tipo, desc, monto, oper):
@@ -1544,6 +1662,43 @@ def verificar_y_crear_db():
         return False
     
 
+# --- AGREGAR AL FINAL DE interfaz.py (Antes del bloque 'if __name__...') ---
+
+def realizar_respaldo_seguridad():
+    """ Crea una copia de la base de datos en la carpeta /RESPALDOS al iniciar """
+    if os.path.exists("taxis.db"):
+        carpeta = "RESPALDOS_AUTO"
+        if not os.path.exists(carpeta):
+            os.makedirs(carpeta)
+            # Ocultar carpeta en Windows para que no la borren por error
+            try: ctypes.windll.kernel32.SetFileAttributesW(carpeta, 0x02) 
+            except: pass
+
+        # Nombre del archivo con fecha: taxis_backup_2026-01-25.db
+        fecha = datetime.now().strftime("%Y-%m-%d")
+        destino = os.path.join(carpeta, f"taxis_backup_{fecha}.db")
+        
+        # Solo copiamos si no existe ya el respaldo de hoy (para no alentar el inicio)
+        if not os.path.exists(destino):
+            try:
+                import shutil
+                shutil.copy2("taxis.db", destino)
+                print(f"✅ Respaldo de seguridad creado: {destino}")
+            except Exception as e:
+                print(f"⚠️ No se pudo crear respaldo: {e}")
+
+# --- Y LUEGO LO LLAMAS EN EL MAIN ---
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    
+    # ... (Tu código de memoria compartida) ...
+
+    # ¡AQUÍ LLAMAS LA FUNCIÓN!
+    realizar_respaldo_seguridad() 
+
+    # ... (Tu código de splash screen e inicio) ...
+    
+
     
 # ==========================================
 # 4. INICIALIZACIÓN BD Y MAIN
@@ -1556,6 +1711,8 @@ if __name__ == "__main__":
     if not mem.create(1):
         QMessageBox.warning(None, "Sistema", "El sistema ya se está ejecutando.")
         sys.exit(0)
+
+    realizar_respaldo_seguridad()
 
     # 2. Splash Screen (Opcional, si tienes el logo se ve bonito)
     splash = None

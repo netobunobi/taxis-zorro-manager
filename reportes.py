@@ -302,9 +302,16 @@ class GeneradorPDF:
         self.elementos.append(t_det)
         self._finalizar_reporte()
 
-    def generar_ticket_incidencia(self, taxi, tipo, descripcion, monto, operadora):
-        fecha_gen = datetime.now().strftime('%d/%m/%Y %H:%M')
-        self._agregar_encabezado(f"REPORTE DE INCIDENCIA - TAXI {taxi}", fecha_gen)
+    def generar_ticket_incidencia(self, taxi, tipo, descripcion, monto, operadora, fecha_personalizada=None):
+        # Si nos mandan una fecha (reimpresión), la usamos. Si no, usamos "ahora".
+        if fecha_personalizada:
+            fecha_texto = fecha_personalizada
+            titulo = f"COPIA DE REPORTE - TAXI {taxi}" # Cambiamos título para que se sepa que es copia
+        else:
+            fecha_texto = datetime.now().strftime('%d/%m/%Y %H:%M')
+            titulo = f"REPORTE DE INCIDENCIA - TAXI {taxi}"
+
+        self._agregar_encabezado(titulo, fecha_texto)
         color_fondo = colors.HexColor("#FEE2E2") 
         if monto == 0: color_fondo = colors.HexColor("#FEF3C7") 
         datos = [["TIPO DE REPORTE:", tipo], ["DESCRIPCIÓN:", Paragraph(descripcion, self.estilo_normal)], ["REPORTADO POR:", operadora.upper()], ["MONTO A PAGAR:", f"${monto:,.2f}"]]
