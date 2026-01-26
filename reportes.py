@@ -97,7 +97,7 @@ class GeneradorPDF:
         if password and tipo_reporte == "ADMIN":
             self.doc.encrypt = StandardEncryption(password, canPrint=1, canCopy=0, canModify=0)
 
-        titulo = "REPORTE OPERATIVO DIARIO" if tipo_reporte == "PUBLICO" else "REPORTE GERENCIAL COMPLETO"
+        titulo = "REPORTE OPERATIVO" if tipo_reporte == "PUBLICO" else "REPORTE GERENCIAL COMPLETO"
         self._agregar_encabezado(titulo, f"Periodo: {periodo} | {fecha_texto}")
 
         # --- EXTRACCIÓN DE DATOS ---
@@ -105,16 +105,25 @@ class GeneradorPDF:
         servicios = datos_generales['servicios'] 
         incidencias = datos_generales['incidencias']
         lista_flota = datos_generales.get('detalle_flota', [])
+        inc_list = datos_generales.get('incidencias_lista', []) 
 
-        # CALCULAR AUSENCIAS ESPECÍFICAS
-        # Buscamos en el desglose cuántas incidencias contienen la palabra "Ausencia" o "Falta"
-        total_ausencias = 0
-        for tipo, cant, _ in incidencias.get('desglose', []):
-            if "Ausencia" in tipo or "Falta" in tipo or "Ausentismo" in tipo:
-                total_ausencias += cant
+        # --- 1. FILTRADO INTELIGENTE DE AUSENCIAS ---
+        # Primero construimos la lista exacta de quién faltó.
+        # El contador saldrá DIRECTAMENTE de esta lista para que no haya errores.
+        lista_ausentes = []
+        if inc_list:
+            for item in inc_list:
+                t_str = str(item['tipo']).upper() # Convertir a MAYUSCULAS para comparar bien
+                
+                # Es ausencia SI: Dice "AUSENCIA" o "FALTA" ... Y NO dice "BANDEROLA"
+                if ("AUSENCIA" in t_str or "FALTA" in t_str) and "BANDEROLA" not in t_str:
+                    lista_ausentes.append(item)
+
+        # AHORA SÍ: El total es exactamente el tamaño de la lista
+        total_ausencias = len(lista_ausentes)
 
         # ==========================================================
-        # 1. TABLA RESUMEN GENERAL (INCLUYE AUSENCIAS AHORA)
+        # 2. METRICAS GLOBALES (CON EL DATO CORREGIDO)
         # ==========================================================
         d_ops = [
             ["METRICAS GLOBALES", "CANTIDAD"],
@@ -122,10 +131,8 @@ class GeneradorPDF:
             ["Servicios de Base", str(servicios.get(1,0))],
             ["Servicios Teléfono", str(servicios.get(2,0) + servicios.get(3,0))],
             ["Total Incidencias", str(incidencias['total_count'])],
-            # --- NUEVA FILA SOLICITADA ---
             ["AUSENCIAS / FALTAS", str(total_ausencias)] 
         ]
-        
         t_ops = Table(d_ops, colWidths=[4*inch, 2*inch])
         t_ops.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1E293B")),
@@ -133,125 +140,174 @@ class GeneradorPDF:
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
             ('ALIGN', (1,0), (-1,-1), 'CENTER'),
             ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-            # Resaltar la fila de Ausencias en Rojo suave si hay faltas
+            # Rojo solo si hay ausencias reales (> 0)
             ('BACKGROUND', (0,5), (-1,5), colors.HexColor("#FECACA") if total_ausencias > 0 else colors.white),
             ('TEXTCOLOR', (0,5), (-1,5), colors.red if total_ausencias > 0 else colors.black),
-            ('FONTNAME', (0,5), (-1,5), 'Helvetica-Bold'),
         ]))
         self.elementos.append(t_ops)
         self.elementos.append(Spacer(1, 15))
 
         # ==========================================================
-        # 2. SÁBANA DE LA FLOTA (AHORA EN PUBLICO Y ADMIN)
+        # 3. SÁBANA DE LA FLOTA (CON SUBTOTALES)
         # ==========================================================
         if lista_flota:
             self.elementos.append(Paragraph("RESUMEN DE ACTIVIDAD POR UNIDAD", self.estilo_sub))
-            
-            # Encabezados
             head_flota = ["TAXI", "VIAJES", "HORAS", "INGRESOS"]
             data_flota = [head_flota]
-            
-            # Ordenamos por número de taxi
             lista_flota.sort(key=lambda x: int(x['numero']))
 
+            sum_viajes = 0; sum_horas = 0.0; sum_dinero = 0.0
+
             for taxi in lista_flota:
-                data_flota.append([
-                    f"Unidad {taxi['numero']}",
-                    str(taxi['viajes']),
-                    f"{taxi['horas']:.1f} h",
-                    f"${taxi['dinero']:,.2f}"
-                ])
+                v = int(taxi.get('viajes', 0)); h = float(taxi.get('horas', 0)); d = float(taxi.get('dinero', 0))
+                sum_viajes += v; sum_horas += h; sum_dinero += d
+                data_flota.append([f"Unidad {taxi['numero']}", str(v), f"{h:.1f} h", f"${d:,.2f}"])
+
+            # Subtotales
+            texto_dinero = f"${sum_dinero:,.2f}" if tipo_reporte == "ADMIN" else "---"
+            data_flota.append(["TOTALES", str(sum_viajes), f"{sum_horas:.1f} h", texto_dinero])
 
             t_flota = Table(data_flota, colWidths=[1.5*inch, 1*inch, 1.2*inch, 1.5*inch])
-            
             estilo_flota = [
                 ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0F172A")),
                 ('TEXTCOLOR', (0,0), (-1,0), colors.white),
                 ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
                 ('ALIGN', (1,0), (-1,-1), 'CENTER'),
                 ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F8FAFC")])
+                ('ROWBACKGROUNDS', (0,1), (-2,-1), [colors.white, colors.HexColor("#F8FAFC")]),
+                ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#CBD5E1")), 
+                ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
             ]
-
-            # ALERTAS VISUALES (Rojo si trabajó menos de 8 horas)
             for i, taxi in enumerate(lista_flota):
-                fila_idx = i + 1 
                 if taxi['horas'] < 8.0:
-                    estilo_flota.append(('BACKGROUND', (2, fila_idx), (2, fila_idx), colors.HexColor("#FECACA")))
-                    estilo_flota.append(('TEXTCOLOR', (2, fila_idx), (2, fila_idx), colors.red))
-                if taxi['viajes'] == 0:
-                     estilo_flota.append(('TEXTCOLOR', (1, fila_idx), (1, fila_idx), colors.grey))
+                    estilo_flota.append(('BACKGROUND', (2, i+1), (2, i+1), colors.HexColor("#FECACA")))
+                    estilo_flota.append(('TEXTCOLOR', (2, i+1), (2, i+1), colors.red))
 
             t_flota.setStyle(TableStyle(estilo_flota))
             self.elementos.append(t_flota)
-            self.elementos.append(Paragraph("* Celdas rojas indican jornada incompleta (< 8h).", self.estilo_programa))
-            self.elementos.append(Spacer(1, 20))
-
-
-        # ==========================================================
-        # 3. INCIDENCIAS DETALLADAS
-        # ==========================================================
-        if incidencias['total_count'] > 0:
-            self.elementos.append(Paragraph("DETALLE DE INCIDENCIAS / DISCIPLINA", self.estilo_sub))
-            head_inc = ["TIPO", "CANTIDAD"]
-            if tipo_reporte == "ADMIN": head_inc.append("MONTO ($)")
-            
-            d_inc = [head_inc]
-            for tipo, cant, lana in incidencias['desglose']:
-                row = [tipo, str(cant)]
-                if tipo_reporte == "ADMIN": row.append(f"${lana:,.2f}")
-                d_inc.append(row)
-            
-            anchos = [3*inch, 1.5*inch]
-            if tipo_reporte == "ADMIN": anchos.append(1.5*inch)
-
-            t_inc = Table(d_inc, colWidths=anchos)
-            t_inc.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#EF4444")),
-                ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('ALIGN', (1,0), (-1,-1), 'CENTER'),
-                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-            ]))
-            self.elementos.append(t_inc)
             self.elementos.append(Spacer(1, 20))
 
         # ==========================================================
-        # 4. EXCLUSIVO ADMIN (GRÁFICAS Y TOPs)
+        # 4. GRÁFICA DE SERVICIOS (AMBOS)
         # ==========================================================
-        if tipo_reporte == "ADMIN" and datos_admin:
-            self.elementos.append(Paragraph("ANÁLISIS ESTADÍSTICO (Privado)", self.estilo_titulo))
-            self.elementos.append(Spacer(1, 10))
+        raw_graf = datos_admin.get('grafica_servicios', []) if datos_admin else datos_generales.get('grafica_bases', [])
+        if raw_graf:
+            self.elementos.append(Paragraph("DISTRIBUCIÓN DE SERVICIOS", self.estilo_sub))
+            data_pie, labels_pie = [], []
+            for desc, cant in raw_graf:
+                data_pie.append(cant); labels_pie.append(f"{desc}")
+            
+            d = Drawing(400, 150)
+            pc = Pie(); pc.x = 100; pc.y = 10; pc.width = 130; pc.height = 130
+            pc.data = data_pie; pc.labels = labels_pie; pc.sideLabels = 1
+            colores = [colors.HexColor("#00D1FF"), colors.HexColor("#10B981"), colors.HexColor("#FACC15"), colors.HexColor("#F87171")]
+            for i in range(len(data_pie)): pc.slices[i].fillColor = colores[i % len(colores)]
+            d.add(pc)
+            self.elementos.append(d)
+            self.elementos.append(Spacer(1, 15))
 
-            # Gráfica Pastel
-            raw_graf = datos_admin.get('grafica_servicios', [])
-            if raw_graf:
-                self.elementos.append(Paragraph("Distribución de Servicios:", self.estilo_sub))
-                data_pie, labels_pie = [], []
-                for desc, cant in raw_graf:
-                    data_pie.append(cant)
-                    labels_pie.append(f"{desc}")
+        # ==========================================================
+        # 5. INCIDENCIAS, AUSENCIAS Y DESGLOSE
+        # ==========================================================
+        if inc_list or lista_ausentes:
+            
+            # A) TABLA ESPECIAL DE AUSENCIAS (Ahora garantizada la sincronía)
+            if lista_ausentes:
+                self.elementos.append(Paragraph("⚠️ REPORTE DE INACTIVIDAD / AUSENCIAS", ParagraphStyle('Alerta', parent=self.estilos['Heading3'], textColor=colors.red)))
+                head_aus = ["UNIDAD", "DETALLE DE LA FALTA"]
+                data_aus = [head_aus]
+                for item in lista_ausentes:
+                    data_aus.append([f"Taxi {item['unidad']}", Paragraph(str(item['descripcion']), self.estilo_normal)])
                 
-                d = Drawing(400, 150)
-                pc = Pie(); pc.x = 100; pc.y = 10; pc.width = 130; pc.height = 130
-                pc.data = data_pie; pc.labels = labels_pie; pc.sideLabels = 1
-                colores = [colors.HexColor("#00D1FF"), colors.HexColor("#10B981"), colors.HexColor("#FACC15"), colors.HexColor("#F87171")]
-                for i in range(len(data_pie)): pc.slices[i].fillColor = colores[i % len(colores)]
-                d.add(pc)
-                self.elementos.append(d)
+                t_aus = Table(data_aus, colWidths=[1.5*inch, 4*inch])
+                t_aus.setStyle(TableStyle([
+                    ('BACKGROUND', (0,0), (-1,0), colors.red),
+                    ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                    ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                    ('ALIGN', (0,0), (0,-1), 'CENTER'),
+                ]))
+                self.elementos.append(t_aus)
                 self.elementos.append(Spacer(1, 15))
 
-            # Tablas TOP
-            def crear_tabla_top(titulo, lista_datos, es_por_horas=False):
-                self.elementos.append(Paragraph(titulo, self.estilo_sub))
-                head = ["POS", "UNIDAD", "HORAS" if es_por_horas else "VIAJES", "DINERO"]
-                data = [head]
-                for i, x in enumerate(lista_datos):
-                    val = f"{x['horas']:.1f} h" if es_por_horas else str(x['viajes'])
-                    data.append([f"#{i+1}", f"Taxi {x['numero']}", val, f"${x['dinero']:,.2f}"])
+            # B) DESGLOSE GENERAL DE PENDIENTES
+            self.elementos.append(Paragraph("DESGLOSE DETALLADO DE PENDIENTES", self.estilo_sub))
+            head_det = ["UNIDAD", "CONCEPTO", "DETALLE", "OPERADOR", "MONTO" if tipo_reporte == "ADMIN" else "ESTADO"]
+            data_det = [head_det]
+            
+            ahora = datetime.now()
+            sum_deuda = 0.0
+            filas_criticas = []
+
+            for item in inc_list:
+                tipo_limpio = str(item['tipo']).replace("⚠️ ", "").replace("🛑 ", "").replace("🚩 ", "").replace("🚫 ", "").replace("💸 ", "").replace("💰 ", "")
+                t_upper = tipo_limpio.upper()
+
+                # Omitimos de esta lista general las ausencias que YA pusimos en la tabla roja de arriba
+                if ("AUSENCIA" in t_upper or "FALTA" in t_upper) and "BANDEROLA" not in t_upper:
+                    continue 
+
+                es_critico = False
+                if "PISO" in t_upper:
+                    try:
+                        f_inc = datetime.strptime(str(item.get('fecha_registro', ahora))[:10], '%Y-%m-%d')
+                        dias = (ahora - f_inc).days
+                        if dias <= 3: continue 
+                        if dias > 15: es_critico = True
+                    except: pass
+
+                monto = float(item.get('monto', 0))
+                sum_deuda += monto
+
+                fila = [
+                    f"Taxi {item['unidad']}",
+                    tipo_limpio.upper() + (" (ATRASADO)" if es_critico else ""),
+                    Paragraph(str(item['descripcion']), self.estilo_normal),
+                    Paragraph(str(item['operador']), self.estilo_normal)
+                ]
+                fila.append(f"${monto:,.2f}" if tipo_reporte == "ADMIN" else ("URGENTE" if es_critico else "PENDIENTE"))
                 
-                if len(data) == 1: data.append(["-", "-", "-", "-"])
-                t = Table(data, colWidths=[0.7*inch, 1.2*inch, 1.2*inch, 1.5*inch])
+                data_det.append(fila)
+                if es_critico: filas_criticas.append(len(data_det) - 1)
+
+            if len(data_det) > 1:
+                # Subtotal Deuda
+                txt_sub = f"${sum_deuda:,.2f}" if tipo_reporte == "ADMIN" else "---"
+                data_det.append(["", "", "TOTAL ACUMULADO VISIBLE", "", txt_sub])
+
+                t_det = Table(data_det, colWidths=[0.8*inch, 1.1*inch, 3.1*inch, 1.1*inch, 0.9*inch])
+                estilo_inc = [
+                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#F87171")),
+                    ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                    ('ALIGN', (0,0), (1,-1), 'CENTER'),
+                    ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                    ('FONTSIZE', (0,0), (-1,-1), 8),
+                    ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#FECACA")),
+                    ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
+                ]
+                for idx in filas_criticas:
+                    estilo_inc.append(('BACKGROUND', (0, idx), (-1, idx), colors.red))
+                    estilo_inc.append(('TEXTCOLOR', (0, idx), (-1, idx), colors.white))
+
+                t_det.setStyle(TableStyle(estilo_inc))
+                self.elementos.append(t_det)
+                self.elementos.append(Spacer(1, 20))
+
+        # ==========================================================
+        # 6. EXCLUSIVO ADMIN: LAS 3 TABLAS TOP
+        # ==========================================================
+        if tipo_reporte == "ADMIN" and lista_flota:
+            def crear_top(titulo, datos_ord, es_money=False, es_horas=False):
+                self.elementos.append(Paragraph(titulo, self.estilo_sub))
+                head = ["POS", "UNIDAD", "VALOR"]
+                data = [head]
+                for i, x in enumerate(datos_ord[:5]):
+                    if es_money: val = f"${float(x['dinero']):,.2f}"
+                    elif es_horas: val = f"{float(x['horas']):.1f} h"
+                    else: val = f"{x['viajes']} viajes"
+                    data.append([f"#{i+1}", f"Taxi {x['numero']}", val])
+                
+                t = Table(data, colWidths=[0.8*inch, 1.5*inch, 1.5*inch])
                 t.setStyle(TableStyle([
                     ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#334155")),
                     ('TEXTCOLOR', (0,0), (-1,0), colors.white),
@@ -261,13 +317,18 @@ class GeneradorPDF:
                 self.elementos.append(t)
                 self.elementos.append(Spacer(1, 10))
 
-            if 'top_viajes' in datos_admin:
-                crear_tabla_top(">> TOP 5: MAYOR PRODUCTIVIDAD", datos_admin['top_viajes'][:5], False)
-            if 'top_horas' in datos_admin:
-                crear_tabla_top(">> TOP 5: MAYOR DEDICACIÓN", datos_admin['top_horas'][:5], True)
+            top_v = sorted(lista_flota, key=lambda x: int(x['viajes']), reverse=True)
+            crear_top(">> TOP 5: MÁS VIAJES", top_v, es_money=False, es_horas=False)
 
-            # Dinero Total Grande
+            top_h = sorted(lista_flota, key=lambda x: float(x['horas']), reverse=True)
+            crear_top(">> TOP 5: MÁS HORAS TRABAJADAS", top_h, es_money=False, es_horas=True)
+
+            top_d = sorted(lista_flota, key=lambda x: float(x['dinero']), reverse=True)
+            crear_top(">> TOP 5: MAYOR INGRESO GENERADO", top_d, es_money=True, es_horas=False)
+
             ganancia_total = datos_admin.get('total_empresa', 0)
+            if ganancia_total == 0: ganancia_total = sum(float(x['dinero']) for x in lista_flota)
+            
             t_money = Table([["INGRESOS TOTALES DEL PERIODO"], [f"${ganancia_total:,.2f}"]], colWidths=[4*inch])
             t_money.setStyle(TableStyle([
                 ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#10B981")),
@@ -282,7 +343,6 @@ class GeneradorPDF:
         self.elementos.append(Paragraph(txt_fin, self.estilo_periodo))
         
         return self._finalizar_reporte()
-
     # --- REPORTE INDIVIDUAL (ESTILOS ARREGLADOS) ---
     # Nota: Agregamos el nuevo parámetro 'lista_incidencias=None' al final
     def generar_reporte_unidad(self, numero, texto_fecha, stats, lista_viajes, lista_incidencias=None):

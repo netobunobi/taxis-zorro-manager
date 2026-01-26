@@ -15,6 +15,8 @@ class GestorBaseDatos:
         else:
             self._verificar_estructura()
 
+        self.crear_tabla_bitacora()
+
     def _conectar(self):
         conn = sqlite3.connect(self.nombre_base_datos)
         conn.row_factory = sqlite3.Row
@@ -943,3 +945,50 @@ class GestorBaseDatos:
             conn.commit(); conn.close()
             return True
         except: return False
+
+
+    # ==========================================
+    # SISTEMA DE BITÁCORA (PENDIENTES)
+    # ==========================================
+    def crear_tabla_bitacora(self):
+        try:
+            conn = sqlite3.connect(self.nombre_base_datos)
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS bitacora (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    fecha TEXT,
+                    mensaje TEXT,
+                    estado TEXT,
+                    prioridad TEXT
+                )
+            ''')
+            conn.commit()
+            conn.close()
+        except: pass
+
+    def agregar_nota_bitacora(self, mensaje, es_urgente=False):
+        conn = sqlite3.connect(self.nombre_base_datos)
+        cursor = conn.cursor()
+        prioridad = "URGENTE" if es_urgente else "NORMAL"
+        fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
+        cursor.execute("INSERT INTO bitacora (fecha, mensaje, estado, prioridad) VALUES (?, ?, ?, ?)",
+                       (fecha, mensaje, "PENDIENTE", prioridad))
+        conn.commit()
+        conn.close()
+
+    def obtener_notas_pendientes(self):
+        conn = sqlite3.connect(self.nombre_base_datos)
+        cursor = conn.cursor()
+        # Ordenamos: Primero las URGENTES, luego las más nuevas
+        cursor.execute("SELECT id, fecha, mensaje, prioridad FROM bitacora WHERE estado = 'PENDIENTE' ORDER BY prioridad DESC, id DESC")
+        notas = cursor.fetchall()
+        conn.close()
+        return notas
+
+    def completar_nota(self, id_nota):
+        conn = sqlite3.connect(self.nombre_base_datos)
+        cursor = conn.cursor()
+        cursor.execute("UPDATE bitacora SET estado = 'HECHO' WHERE id = ?", (id_nota,))
+        conn.commit()
+        conn.close()

@@ -95,6 +95,104 @@ class TaxiItem(QListWidgetItem):
         except: return self.text() < other.text()
 
 # ==========================================
+# PESTAÑA NUEVA: BITÁCORA DE RELEVO
+# ==========================================
+class PanelBitacora(QWidget):
+    def __init__(self, db_manager):
+        super().__init__()
+        self.db = db_manager
+        self.inicializar_ui()
+        self.cargar_notas()
+        
+        # Refresco automático cada 30 seg
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.cargar_notas)
+        self.timer.start(30000) 
+
+    def inicializar_ui(self):
+        # Layout principal con márgenes amplios
+        layout = QVBoxLayout()
+        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(20)
+        self.setLayout(layout)
+        
+        # Título Grande
+        lbl = QLabel("📝 BITÁCORA DE PENDIENTES Y RELEVOS")
+        lbl.setStyleSheet("font-weight: bold; font-size: 24px; color: #FACC15; margin-bottom: 10px;")
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(lbl)
+
+        # Área de entrada (Arriba para acceso rápido)
+        frame_input = QFrame()
+        frame_input.setStyleSheet("background-color: #1E293B; border-radius: 10px; padding: 10px;")
+        l_input = QHBoxLayout(frame_input)
+        
+        self.txt_mensaje = QLineEdit()
+        self.txt_mensaje.setPlaceholderText("Escribe el pendiente aquí... (Ej: Unidad 59 pendiente de pago, avisar a turno nocturno)")
+        self.txt_mensaje.setStyleSheet("font-size: 16px; padding: 10px; background-color: #0F172A; color: white; border: 1px solid #334155;")
+        self.txt_mensaje.returnPressed.connect(self.agregar_nota)
+        
+        self.chk_urgente = QCheckBox("🔥 ¡URGENTE!")
+        self.chk_urgente.setStyleSheet("color: #EF4444; font-weight: bold; font-size: 16px; margin-left: 10px;")
+        
+        btn_add = QPushButton("AGREGAR NOTA")
+        btn_add.setFixedSize(150, 45)
+        btn_add.setStyleSheet("background-color: #10B981; color: white; font-weight: bold; font-size: 14px; border-radius: 5px;")
+        btn_add.clicked.connect(self.agregar_nota)
+
+        l_input.addWidget(self.txt_mensaje)
+        l_input.addWidget(self.chk_urgente)
+        l_input.addWidget(btn_add)
+        
+        layout.addWidget(frame_input)
+
+        # Lista de Notas (Ocupa el resto del espacio)
+        layout.addWidget(QLabel("📌 LISTA DE PENDIENTES (Doble clic para borrar):", styleSheet="color: #94A3B8; font-size: 14px; font-weight: bold;"))
+        
+        self.lista_notas = QListWidget()
+        self.lista_notas.setStyleSheet("""
+            QListWidget { background-color: #1E293B; border: 2px solid #334155; border-radius: 10px; font-size: 16px; outline: none; }
+            QListWidget::item { padding: 15px; border-bottom: 1px solid #334155; color: white; margin: 2px; border-radius: 5px; }
+            QListWidget::item:hover { background-color: #334155; }
+        """)
+        self.lista_notas.itemDoubleClicked.connect(self.marcar_completado)
+        layout.addWidget(self.lista_notas)
+
+    def cargar_notas(self):
+        self.lista_notas.clear()
+        notas = self.db.obtener_notas_pendientes()
+        
+        for id_n, fecha, texto, prioridad in notas:
+            # Formato visual limpio
+            item_text = f"📅 {fecha}  |  {texto}"
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.ItemDataRole.UserRole, id_n)
+            
+            if prioridad == "URGENTE":
+                item.setBackground(QColor("#7F1D1D")) # Fondo Rojo Oscuro
+                item.setForeground(QColor("#FECACA")) # Texto Rojo Claro
+                item.setText(f"🔥 URGENTE  |  {fecha}  |  {texto}")
+                font = item.font(); font.setBold(True); font.setPointSize(16)
+                item.setFont(font)
+            else:
+                item.setBackground(QColor("#0F172A")) # Fondo Azul Oscuro Normal
+                
+            self.lista_notas.addItem(item)
+
+    def agregar_nota(self):
+        txt = self.txt_mensaje.text().strip()
+        if not txt: return
+        self.db.agregar_nota_bitacora(txt, self.chk_urgente.isChecked())
+        self.txt_mensaje.clear()
+        self.chk_urgente.setChecked(False)
+        self.cargar_notas()
+
+    def marcar_completado(self, item):
+        if QMessageBox.question(self, "Completar", "¿Ya se atendió este pendiente?", QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            self.db.completar_nota(item.data(Qt.ItemDataRole.UserRole))
+            self.cargar_notas()
+
+# ==========================================
 # 3. VENTANA PRINCIPAL
 # ==========================================
 
@@ -106,14 +204,12 @@ class VentanaPrincipal(QMainWindow):
         self.setWindowIcon(QIcon(ruta_ico))
         self.resize(1280, 720)
         self.bases_ocultas = set()
-        
-        #flag para que no haga cositas insanas (cuando cargamos los datos al abrirlo)
         self.cargando_datos = False
         
         self.db = GestorBaseDatos("taxis.db")
-        self.listas_bases = {} 
+        self.listas_bases = {}
 
-        # ESTILOS GENERALES
+        # === ESTILOS COMPLETOS (Aquí estaba el error de los "...") ===
         self.setStyleSheet("""
             QMainWindow, QWidget { background-color: #0F172A; color: #E2E8F0; font-family: 'Segoe UI', sans-serif; }
             QTabWidget::pane { border-top: 2px solid #FACC15; background-color: #0F172A; }
@@ -123,25 +219,32 @@ class VentanaPrincipal(QMainWindow):
             #cajaBase { background-color: #1E293B; border: 2px dashed #334155; border-radius: 10px; }
         """)
 
+        # === CONFIGURACIÓN DE LAS 3 PESTAÑAS ===
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
         
+        # 1. Tablero
         tab_tablero = QWidget()
-        tab_admin = QWidget()
-        
+        self.init_tablero(tab_tablero)
         self.tabs.addTab(tab_tablero, "TABLERO DE CONTROL")
+        
+        # 2. Bitácora (NUEVA)
+        # Importante: Asegúrate de haber pegado la clase PanelBitacora antes de VentanaPrincipal
+        self.tab_bitacora = PanelBitacora(self.db)
+        self.tabs.addTab(self.tab_bitacora, "📝 BITÁCORA Y PENDIENTES")
+        
+        # 3. Administración
+        tab_admin = QWidget()
+        self.init_admin(tab_admin)
         self.tabs.addTab(tab_admin, "ADMINISTRACIÓN")
         
-        self.init_tablero(tab_tablero)
-        self.init_admin(tab_admin)
-        
+        # Iniciar datos
         self.cargar_datos_en_tablero()
-
         self.timer_semaforo = QTimer(self)
         self.timer_semaforo.timeout.connect(self.cargar_datos_en_tablero)
         self.timer_semaforo.start(60000)
-
-    # ---------------------------------------------------------
+        
+        # ---------------------------------------------------------
     # PESTAÑA 1: TABLERO DE CONTROL (NO TOCAR - ESTÁ BIEN)
     # ---------------------------------------------------------
     def init_tablero(self, tab):
