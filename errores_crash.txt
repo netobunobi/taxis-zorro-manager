@@ -1,0 +1,130 @@
+
+
+--- ERROR REGISTRADO: 2026-01-30 23:39:45 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 2394, in <module>
+    v = VentanaPrincipal()
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 242, in __init__
+    self.cargar_datos_en_tablero()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 717, in cargar_datos_en_tablero
+    self.actualizar_visual_banderola()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 2245, in actualizar_visual_banderola
+    encargado = self.db.obtener_encargado_banderolas()
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\gestor_db.py", line 1022, in obtener_encargado_banderolas
+    c.execute("SELECT numero_economico FROM taxis WHERE estatus='ACTIVO' ORDER BY CAST(numero_economico AS INTEGER)")
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.OperationalError: no such column: estatus
+
+------------------
+
+
+--- ERROR REGISTRADO: 2026-01-31 00:20:22 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1469, in abrir_menu_configuracion
+    txt_piso = QLineEdit(str(self.db.obtener_costo_piso()))
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'GestorBaseDatos' object has no attribute 'obtener_costo_piso'. Did you mean: 'obtener_config_piso'?
+
+------------------
+
+
+--- ERROR REGISTRADO: 2026-01-31 00:20:23 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1469, in abrir_menu_configuracion
+    txt_piso = QLineEdit(str(self.db.obtener_costo_piso()))
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'GestorBaseDatos' object has no attribute 'obtener_costo_piso'. Did you mean: 'obtener_config_piso'?
+
+------------------
+
+
+--- ERROR REGISTRADO: 2026-01-31 00:20:23 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1469, in abrir_menu_configuracion
+    txt_piso = QLineEdit(str(self.db.obtener_costo_piso()))
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'GestorBaseDatos' object has no attribute 'obtener_costo_piso'. Did you mean: 'obtener_config_piso'?
+
+------------------
+
+
+--- ERROR REGISTRADO: 2026-01-31 00:20:23 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1469, in abrir_menu_configuracion
+    txt_piso = QLineEdit(str(self.db.obtener_costo_piso()))
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'GestorBaseDatos' object has no attribute 'obtener_costo_piso'. Did you mean: 'obtener_config_piso'?
+
+------------------
+
+
+--- ERROR REGISTRADO: 2026-01-31 00:20:24 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1469, in abrir_menu_configuracion
+    txt_piso = QLineEdit(str(self.db.obtener_costo_piso()))
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'GestorBaseDatos' object has no attribute 'obtener_costo_piso'. Did you mean: 'obtener_config_piso'?
+
+------------------
+
+
+--- ERROR REGISTRADO: 2026-01-31 00:20:24 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1469, in abrir_menu_configuracion
+    txt_piso = QLineEdit(str(self.db.obtener_costo_piso()))
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'GestorBaseDatos' object has no attribute 'obtener_costo_piso'. Did you mean: 'obtener_config_piso'?
+
+------------------
+
+
+--- ERROR REGISTRADO: 2026-01-31 00:20:24 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1469, in abrir_menu_configuracion
+    txt_piso = QLineEdit(str(self.db.obtener_costo_piso()))
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'GestorBaseDatos' object has no attribute 'obtener_costo_piso'. Did you mean: 'obtener_config_piso'?
+
+------------------
+
+
+--- ERROR REGISTRADO: 2026-01-31 00:20:24 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1469, in abrir_menu_configuracion
+    txt_piso = QLineEdit(str(self.db.obtener_costo_piso()))
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'GestorBaseDatos' object has no attribute 'obtener_costo_piso'. Did you mean: 'obtener_config_piso'?
+
+------------------
+
+
+--- ERROR REGISTRADO: 2026-01-31 00:20:24 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1469, in abrir_menu_configuracion
+    txt_piso = QLineEdit(str(self.db.obtener_costo_piso()))
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'GestorBaseDatos' object has no attribute 'obtener_costo_piso'. Did you mean: 'obtener_config_piso'?
+
+------------------
+
+
+--- ERROR REGISTRADO: 2026-01-31 00:20:24 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1469, in abrir_menu_configuracion
+    txt_piso = QLineEdit(str(self.db.obtener_costo_piso()))
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'GestorBaseDatos' object has no attribute 'obtener_costo_piso'. Did you mean: 'obtener_config_piso'?
+
+------------------
+
+
+--- ERROR REGISTRADO: 2026-01-31 00:20:24 ---
+Traceback (most recent call last):
+  File "c:\Users\Ernesto\Documents\Github\taxis-zorro-manager\interfaz.py", line 1469, in abrir_menu_configuracion
+    txt_piso = QLineEdit(str(self.db.obtener_costo_piso()))
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'GestorBaseDatos' object has no attribute 'obtener_costo_piso'. Did you mean: 'obtener_config_piso'?
+
+------------------

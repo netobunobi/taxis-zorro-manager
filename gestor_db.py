@@ -992,3 +992,210 @@ class GestorBaseDatos:
         cursor.execute("UPDATE bitacora SET estado = 'HECHO' WHERE id = ?", (id_nota,))
         conn.commit()
         conn.close()
+
+
+    # ==========================================
+    # GESTIÓN DE BANDEROLAS
+    # ==========================================
+    def obtener_encargado_banderolas(self):
+        """Retorna el número del taxi que toca hoy. Si cambia el día, avanza."""
+        conn = sqlite3.connect(self.nombre_base_datos)
+        c = conn.cursor()
+        
+        # 1. Asegurar tabla de config
+        c.execute("CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT)")
+        
+        # 2. Obtener último guardado
+        c.execute("SELECT valor FROM configuracion WHERE clave='banderola_taxi'")
+        res_taxi = c.fetchone()
+        taxi_actual = int(res_taxi[0]) if res_taxi else 1 
+        
+        c.execute("SELECT valor FROM configuracion WHERE clave='banderola_fecha'")
+        res_fecha = c.fetchone()
+        fecha_guardada = res_fecha[0] if res_fecha else ""
+        
+        fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+        
+        # 3. Lógica de cambio de día
+        if fecha_guardada != fecha_hoy:
+            try:
+                # Usamos 'estado_sistema' que es la columna REAL de tu base de datos
+                c.execute("SELECT numero_economico FROM taxis WHERE estado_sistema='ACTIVO' ORDER BY CAST(numero_economico AS INTEGER)")
+                taxis = [int(row[0]) for row in c.fetchall() if row[0].isdigit()]
+            except:
+                taxis = []
+            
+            if not taxis: 
+                conn.close(); return 0 
+            
+            if taxi_actual in taxis:
+                idx = taxis.index(taxi_actual)
+                nuevo_idx = (idx + 1) % len(taxis)
+                nuevo_taxi = taxis[nuevo_idx]
+            else:
+                nuevo_taxi = taxis[0]
+                for t in taxis:
+                    if t > taxi_actual:
+                        nuevo_taxi = t
+                        break
+            
+            c.execute("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES ('banderola_taxi', ?)", (str(nuevo_taxi),))
+            c.execute("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES ('banderola_fecha', ?)", (fecha_hoy,))
+            conn.commit()
+            taxi_actual = nuevo_taxi
+            
+        conn.close()
+        return taxi_actual
+
+    def forzar_cambio_banderola(self, nuevo_numero):
+        conn = sqlite3.connect(self.nombre_base_datos)
+        c = conn.cursor()
+        c.execute("CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT)")
+        fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+        c.execute("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES ('banderola_taxi', ?)", (str(nuevo_numero),))
+        c.execute("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES ('banderola_fecha', ?)", (fecha_hoy,))
+        conn.commit()
+        conn.close()
+
+
+    def forzar_cambio_banderola(self, nuevo_numero):
+        """Para corregir manualmente (ej. poner al 74 mañana)"""
+        conn = sqlite3.connect(self.nombre_base_datos)
+        c = conn.cursor()
+        c.execute("CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT)")
+        fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+        
+        c.execute("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES ('banderola_taxi', ?)", (str(nuevo_numero),))
+        c.execute("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES ('banderola_fecha', ?)", (fecha_hoy,))
+        conn.commit()
+        conn.close()
+
+
+    def obtener_resumen_periodo(self, tipo_periodo, fecha_inicio, fecha_fin=None):
+        conn = sqlite3.connect(self.nombre_base_datos)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        if not fecha_fin: fecha_fin = fecha_inicio
+
+        # 1. TOTALES GENERALES
+        c.execute("SELECT COUNT(*) as viajes, SUM(costo) as dinero FROM viajes WHERE date(fecha) BETWEEN ? AND ?", (fecha_inicio, fecha_fin))
+        total_gral = c.fetchone()
+        
+        res = {
+            'totales': {'viajes': total_gral['viajes'] or 0, 'dinero': total_gral['dinero'] or 0.0},
+            'servicios': {},
+            'incidencias': {'total_count': 0, 'desglose': []},
+            'detalle_flota': [], 
+            'incidencias_lista': [],
+            'grafica_bases': []
+        }
+
+        # 2. DETALLE FLOTA (CRUCIAL PARA TU REPORTE)
+        # Traemos a TODOS los taxis activos y vemos en qué base están actualmente
+        c.execute("""
+            SELECT t.numero_economico, t.base_actual_id, b.nombre_base
+            FROM taxis t
+            LEFT JOIN cat_bases b ON t.base_actual_id = b.id
+            WHERE t.estado_sistema = 'ACTIVO'
+            ORDER BY CAST(t.numero_economico AS INTEGER)
+        """)
+        todos_los_taxis = c.fetchall()
+        
+        # Consultamos los viajes y sumamos horas/minutos
+        c.execute("""
+            SELECT taxi_id, COUNT(*) as v, SUM(costo) as d, SUM(duracion_minutos) as min
+            FROM viajes 
+            WHERE date(fecha) BETWEEN ? AND ?
+            GROUP BY taxi_id
+        """, (fecha_inicio, fecha_fin))
+        stats_viajes = {row['taxi_id']: row for row in c.fetchall()}
+        
+        # Mapeo de IDs de taxis a sus números
+        c.execute("SELECT id, numero_economico FROM taxis")
+        mapa_ids = {row['numero_economico']: row['id'] for row in c.fetchall()}
+
+        lista_procesada = []
+        for taxi in todos_los_taxis:
+            num = taxi['numero_economico']
+            t_id = mapa_ids.get(num)
+            
+            # Datos de trabajo
+            datos = stats_viajes.get(t_id)
+            viajes = datos['v'] if datos else 0
+            dinero = datos['d'] if datos else 0.0
+            horas = (datos['min'] / 60.0) if datos else 0.0
+            
+            # --- DETECCIÓN DE JUSTIFICACIÓN ---
+            # Si el taxi está estacionado en una base de "descanso" o "taller", cuenta como justificado.
+            base_nombre = str(taxi['nombre_base']).upper() if taxi['nombre_base'] else ""
+            
+            # Lista de palabras clave que significan "No te pongo falta"
+            es_justificado = False
+            if "TALLER" in base_nombre: es_justificado = True
+            if "FUERA" in base_nombre: es_justificado = True
+            if "DESC" in base_nombre: es_justificado = True # Para Z2/DESCANSO
+            
+            motivo = base_nombre if es_justificado else ""
+            
+            lista_procesada.append({
+                'numero': num,
+                'viajes': viajes,
+                'dinero': dinero,
+                'horas': horas,
+                'es_justificado': es_justificado,
+                'motivo_inactividad': motivo
+            })
+
+        res['detalle_flota'] = lista_procesada
+
+        # 3. INCIDENCIAS (Sin cambios)
+        c.execute("SELECT i.*, t.numero_economico as unidad FROM incidencias i LEFT JOIN taxis t ON i.taxi_id = t.id WHERE date(i.fecha_registro) BETWEEN ? AND ?", (fecha_inicio, fecha_fin))
+        rows = c.fetchall()
+        res['incidencias_lista'] = [dict(x) for x in rows]
+        res['incidencias']['total_count'] = len(rows)
+        
+        # Desglose rápido
+        tipos_inc = {}
+        for fi in rows:
+            t = fi['tipo']; m = fi['monto']
+            if t not in tipos_inc: tipos_inc[t] = {'cant':0, 'monto':0}
+            tipos_inc[t]['cant'] += 1; tipos_inc[t]['monto'] += m
+        res['incidencias']['desglose'] = [(k, v['cant'], v['monto']) for k,v in tipos_inc.items()]
+
+        # 4. GRÁFICA
+        c.execute("SELECT cb.nombre_base, COUNT(*) FROM viajes v JOIN cat_bases cb ON v.origen_base_id = cb.id WHERE date(v.fecha) BETWEEN ? AND ? GROUP BY cb.nombre_base", (fecha_inicio, fecha_fin))
+        res['grafica_bases'] = c.fetchall()
+
+        conn.close()
+        return res
+    
+
+    # ==========================================
+    # TIEMPOS DE ESPERA BASES (SEMAFORO)
+    # ==========================================
+    def obtener_tiempos_limite(self):
+        """Devuelve diccionario con minutos límite. Default: Local=15, Foraneo=30"""
+        conn = sqlite3.connect(self.nombre_base_datos)
+        c = conn.cursor()
+        c.execute("CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT)")
+        
+        c.execute("SELECT valor FROM configuracion WHERE clave='tiempo_local'")
+        r_local = c.fetchone()
+        t_local = int(r_local[0]) if r_local else 20 # Default 20 min
+        
+        c.execute("SELECT valor FROM configuracion WHERE clave='tiempo_foraneo'")
+        r_foraneo = c.fetchone()
+        t_foraneo = int(r_foraneo[0]) if r_foraneo else 45 # Default 45 min
+        
+        conn.close()
+        return {'local': t_local, 'foraneo': t_foraneo}
+
+    def guardar_tiempos_limite(self, t_local, t_foraneo):
+        conn = sqlite3.connect(self.nombre_base_datos)
+        c = conn.cursor()
+        c.execute("CREATE TABLE IF NOT EXISTS configuracion (clave TEXT PRIMARY KEY, valor TEXT)")
+        c.execute("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES ('tiempo_local', ?)", (str(t_local),))
+        c.execute("INSERT OR REPLACE INTO configuracion (clave, valor) VALUES ('tiempo_foraneo', ?)", (str(t_foraneo),))
+        conn.commit()
+        conn.close()

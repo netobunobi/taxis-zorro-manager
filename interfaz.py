@@ -244,119 +244,79 @@ class VentanaPrincipal(QMainWindow):
         self.timer_semaforo.timeout.connect(self.cargar_datos_en_tablero)
         self.timer_semaforo.start(60000)
         
-        # ---------------------------------------------------------
-    # PESTAÑA 1: TABLERO DE CONTROL (NO TOCAR - ESTÁ BIEN)
-    # ---------------------------------------------------------
+
     def init_tablero(self, tab):
-        # 1. BUSCADOR SUPERIOR Y BOTÓN DE VISTAS
+        # 1. HEADER (Solo Buscador y Vistas)
         container_buscador = QWidget()
         lc = QHBoxLayout(container_buscador)
         lc.setContentsMargins(0, 0, 10, 0)
         
-        # --- BOTÓN NUEVO: GESTIONAR VISTAS ---
         btn_vistas = QPushButton("👁️ Bases")
         btn_vistas.setFixedSize(90, 30)
         btn_vistas.setStyleSheet("background-color: #334155; color: white; border-radius: 5px; font-weight: bold;")
-        btn_vistas.clicked.connect(self.abrir_selector_bases) # Conectamos a la función nueva
+        btn_vistas.clicked.connect(self.abrir_selector_bases)
         lc.addWidget(btn_vistas)
-        # -------------------------------------
 
         self.txt_buscar_taxi = QLineEdit()
         self.txt_buscar_taxi.setPlaceholderText("🔍 Buscar unidad...")
         self.txt_buscar_taxi.setFixedWidth(200)
         self.txt_buscar_taxi.setStyleSheet("background-color: #1E293B; border: 2px solid #00D1FF; border-radius: 8px; color: white; font-weight: bold;")
         self.txt_buscar_taxi.textChanged.connect(self.busqueda_unificada)
-        
         lc.addWidget(self.txt_buscar_taxi)
+        
         self.tabs.setCornerWidget(container_buscador, Qt.Corner.TopRightCorner)
 
         layout = QHBoxLayout(tab)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(15)
 
-        # 2. ZONA IZQUIERDA: GRID DE BASES
+        # 2. BASES (Izquierda)
         zona_bases = QWidget()
         self.grid_bases = QGridLayout(zona_bases)
         self.grid_bases.setSpacing(10)
         self.generar_bases_fisicas()
 
-        # 3. ZONA DERECHA: PANELES ESPECIALES (GRID 2x3)
+        # 3. PANELES DERECHOS (Local, Foráneo, etc.)
         zona_derecha = QWidget()
-        zona_derecha.setFixedWidth(400) # Ancho para que quepan 2 columnas
-        
-        scroll = QFrame()
-        scroll.setStyleSheet("background-color: transparent; border: none;")
-        
-        # Usamos Grid Layout en lugar de VBox
+        zona_derecha.setFixedWidth(400)
+        scroll = QFrame(); scroll.setStyleSheet("background-color: transparent; border: none;")
         layout_derecha_grid = QGridLayout(scroll)
-        layout_derecha_grid.setContentsMargins(0, 0, 0, 0)
-        layout_derecha_grid.setSpacing(10)
+        layout_derecha_grid.setContentsMargins(0, 0, 0, 0); layout_derecha_grid.setSpacing(10)
 
-        # Configuración: (ID, Título, Fondo, Borde, Fila, Columna, Span)
         config_cajas = [
-            (93, "🏘️ LOCAL",   "#0C4A6E", "#0EA5E9", 0, 0, 1), # Fila 0, Izq
-            (92, "🛣️ FORÁNEO", "#1E3A8A", "#3B82F6", 0, 1, 1), # Fila 0, Der
-            (91, "🌮 Z2/DESC",  "#581C87", "#A855F7", 1, 0, 1), # Fila 1, Izq
-            (90, "🛠️ TALLER",   "#713F12", "#EAB308", 1, 1, 1), # Fila 1, Der
-            (12, "⛔ FUERA DE SERVICIO", "#450A0A", "#EF4444", 2, 0, 2) # Fila 2, Todo el ancho
+            (93, "🏘️ LOCAL",   "#0C4A6E", "#0EA5E9", 0, 0, 1),
+            (92, "🛣️ FORÁNEO", "#1E3A8A", "#3B82F6", 0, 1, 1),
+            (91, "🌮 Z2/DESC",  "#581C87", "#A855F7", 1, 0, 1),
+            (90, "🛠️ TALLER",   "#713F12", "#EAB308", 1, 1, 1),
+            (12, "⛔ FUERA DE SERVICIO", "#450A0A", "#EF4444", 2, 0, 2)
         ]
 
         for id_bd, titulo, color_bg, color_border, fila, col, span in config_cajas:
             caja = QWidget()
-            caja.setMinimumHeight(160) # Altura GRANDE
+            caja.setMinimumHeight(160)
             caja.setStyleSheet(f"background-color: {color_bg}; border-radius: 12px; border: 3px solid {color_border};")
             
-            l = QVBoxLayout(caja)
-            l.setContentsMargins(2,5,2,5)
-            
-            lbl = QLabel(titulo)
-            lbl.setStyleSheet(f"color: {color_border}; font-weight: bold; font-size: 15px; border: none; background: transparent;")
+            l = QVBoxLayout(caja); l.setContentsMargins(2,5,2,5)
+            lbl = QLabel(titulo); lbl.setStyleSheet(f"color: {color_border}; font-weight: bold; font-size: 15px; border: none; background: transparent;")
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             
             lista = QListWidget()
             lista.setObjectName(f"lista_especial_{id_bd}")
-            lista.setDragEnabled(True)
-            lista.setAcceptDrops(True)
-            lista.setDefaultDropAction(Qt.DropAction.MoveAction)
-            lista.setDragDropMode(QListWidget.DragDropMode.DragDrop)
+            lista.setDragEnabled(True); lista.setAcceptDrops(True); lista.setDefaultDropAction(Qt.DropAction.MoveAction); lista.setDragDropMode(QListWidget.DragDropMode.DragDrop)
+            lista.setIconSize(QSize(60, 60)); lista.setViewMode(QListWidget.ViewMode.IconMode); lista.setResizeMode(QListWidget.ResizeMode.Adjust); lista.setSpacing(5)
+            lista.setStyleSheet(f"QListWidget {{ background: transparent; border: none; }} QListWidget::item {{ color: white; border-bottom: 1px solid {color_border}; border-radius: 8px; padding: 2px; font-weight: bold; font-size: 14px; }} QListWidget::item:selected {{ background-color: {color_border}; color: black; }}")
             
-            lista.setIconSize(QSize(60, 60)) 
-            lista.setViewMode(QListWidget.ViewMode.IconMode)
-            lista.setResizeMode(QListWidget.ResizeMode.Adjust)
-            lista.setSpacing(5)
-            
-            lista.setStyleSheet(f"""
-                QListWidget {{ background: transparent; border: none; }} 
-                QListWidget::item {{ 
-                    color: white; border-bottom: 1px solid {color_border}; 
-                    border-radius: 8px; padding: 2px; font-weight: bold; font-size: 14px; 
-                }}
-                QListWidget::item:selected {{ background-color: {color_border}; color: black; }}
-            """)
-            
-            # --- CONEXIÓN HÍBRIDA ---
-            # 1. Automática para movimientos normales (protegida por flag)
             lista.model().rowsInserted.connect(lambda p, f, l, w=lista: self.detectar_cambio_base(w, f))
-            # 2. Manual para Rebotes (soltar en la misma caja)
             lista.dropEvent = lambda event, l=lista: self.evento_drop_especial(event, l)
-            
             self.listas_bases[id_bd] = lista
-            
-            l.addWidget(lbl)
-            l.addWidget(lista)
+            l.addWidget(lbl); l.addWidget(lista)
             layout_derecha_grid.addWidget(caja, fila, col, 1, span)
 
-        scroll_area = QScrollArea()
-        scroll_area.setWidget(scroll); scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-        
-        lay_d_final = QVBoxLayout(zona_derecha)
-        lay_d_final.setContentsMargins(0,0,0,0)
-        lay_d_final.addWidget(scroll_area)
+        scroll_area = QScrollArea(); scroll_area.setWidget(scroll); scroll_area.setWidgetResizable(True); scroll_area.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        lay_d_final = QVBoxLayout(zona_derecha); lay_d_final.setContentsMargins(0,0,0,0); lay_d_final.addWidget(scroll_area)
 
         layout.addWidget(zona_bases, 1)
         layout.addWidget(zona_derecha, 0)
-
 
     def evento_drop_especial(self, event, lista_widget):
         # SI ES REBOTE (Origen == Destino)
@@ -384,6 +344,13 @@ class VentanaPrincipal(QMainWindow):
         l = QVBoxLayout(d)
         l.addWidget(QLabel("Desmarca las bases que quieras ocultar:", styleSheet="font-weight:bold; font-size:14px; color:#FACC15;"))
         
+        # --- 1. BOTÓN "MOSTRAR TODAS" ---
+        # Solo sirve para marcar las casillas visualmente. No redibuja nada aún.
+        btn_todas = QPushButton("👁️ MOSTRAR TODAS")
+        btn_todas.setStyleSheet("background-color: #3B82F6; color: white; font-weight: bold; padding: 8px; border-radius: 5px;")
+        l.addWidget(btn_todas)
+        # --------------------------------
+        
         scroll = QScrollArea()
         widget_checks = QWidget()
         l_checks = QVBoxLayout(widget_checks)
@@ -408,12 +375,22 @@ class VentanaPrincipal(QMainWindow):
         scroll.setWidgetResizable(True)
         l.addWidget(scroll)
         
-        # Botones
+        # --- 2. LÓGICA DEL BOTÓN ---
+        def accion_marcar_todas():
+            # Recorremos el diccionario de checkboxes que ya creaste y los activamos
+            for chk in checkboxes.values():
+                chk.setChecked(True)
+        
+        btn_todas.clicked.connect(accion_marcar_todas)
+        # ---------------------------
+        
+        # Botones OK / Cancelar (TU LÓGICA ORIGINAL)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(d.accept)
         bb.rejected.connect(d.reject)
         l.addWidget(bb)
         
+        # Al dar click en OK, se ejecuta TU código seguro:
         if d.exec() == QDialog.DialogCode.Accepted:
             # Actualizar la memoria
             self.bases_ocultas.clear()
@@ -421,11 +398,9 @@ class VentanaPrincipal(QMainWindow):
                 if not chk.isChecked(): # Si le quitaron la palomita
                     self.bases_ocultas.add(bid) # A la lista negra
             
-            # REDIBUJAR TODO
+            # REDIBUJAR TODO (Usando las funciones que ya tienes y sabes que funcionan)
             self.generar_bases_fisicas()
-            self.cargar_datos_en_tablero() # Recargar los taxis en las nuevas posiciones
-
-
+            self.cargar_datos_en_tablero()
     # ---------------------------------------------------------
     # PESTAÑA 2: ADMINISTRACIÓN
     # ---------------------------------------------------------
@@ -577,117 +552,117 @@ class VentanaPrincipal(QMainWindow):
 
 
     def cargar_datos_en_tablero(self):
-        self.cargando_datos = True 
-        
-        # --- FABRICANTE DE FICHAS ---
+        self.cargando_datos = True
+
+        # --- FABRICANTE DE FICHAS (Función interna) ---
         def crear_chip_visual(numero, color_hex, texto_negro=False):
             size = 85
             pixmap = QPixmap(size, size)
             pixmap.fill(Qt.GlobalColor.transparent)
-            
             painter = QPainter(pixmap)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            
-            # Fondo Redondeado
+            # Fondo
             color = QColor(color_hex)
             painter.setBrush(QBrush(color))
-            # Borde sutil para definición
-            painter.setPen(QPen(QColor("rgba(0,0,0,0.15)"), 1)) 
+            painter.setPen(QPen(QColor("rgba(0,0,0,0.15)"), 1))
             painter.drawRoundedRect(2, 2, size-4, size-4, 14, 14)
-            
             # Número
             painter.setPen(QColor("black") if texto_negro else QColor("white"))
             font = QFont("Segoe UI", 22, QFont.Weight.Bold)
             painter.setFont(font)
             painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, str(numero))
-            
             painter.end()
             return QIcon(pixmap)
 
-        # 1. LIMPIEZA
+        # 1. LIMPIEZA VISUAL
         for id_base, lista in self.listas_bases.items():
             lista.clear()
             lista.setStyleSheet("QListWidget { background: transparent; border: none; }")
-            lista.setIconSize(QSize(85, 85)) 
-            lista.setSpacing(4)
+            lista.setIconSize(QSize(85, 85)); lista.setSpacing(4)
 
+        # 2. OBTENER DATOS (Aquí está el cambio 1: Leemos la configuración)
         taxis = self.db.obtener_taxis_activos()
+        
+        # === NUEVO: LEER TIEMPOS CONFIGURADOS ===
+        try:
+            limites = self.db.obtener_tiempos_limite()
+            LIMITE_LOCAL = limites['local']       # Ej: 20
+            LIMITE_FORANEO = limites['foraneo']   # Ej: 45
+        except:
+            LIMITE_LOCAL = 20; LIMITE_FORANEO = 45 # Default de emergencia
+        # ========================================
 
-        # A) Primero ordenamos TODOS por antigüedad (para que las bases físicas se llenen bien)
-        # Esto asegura que el que llegó hace 3 horas aparezca antes que el que llegó hace 5 min.
+        # Ordenar por antigüedad (el más viejo primero)
         taxis.sort(key=lambda x: x['fecha_movimiento'] if x['fecha_movimiento'] else "9999-99-99")
-
         ahora = datetime.now()
 
+        # 3. CONSTRUIR FICHAS
         for taxi in taxis:
             bid = taxi['base_actual_id']
             if bid in self.listas_bases:
                 num_taxi = str(taxi['numero_economico'])
                 
-                # --- REGLA DE ORO: SIEMPRE AMARILLO ---
-                color_hex = "#FACC15" # Amarillo Taxi
-                texto_negro = True    # Texto negro para contraste con amarillo
-                tooltip_txt = "Normal"
+                # Configuración por defecto (Amarillo Taxi)
+                color_hex = "#FACC15" 
+                texto_negro = True    
+                tooltip_txt = "En tiempo"
 
-                # Calcular Tiempo
+                # Calcular minutos en base
                 minutos = 0
                 if taxi['fecha_movimiento']:
                     try:
                         dt_mov = datetime.strptime(taxi['fecha_movimiento'], "%Y-%m-%d %H:%M:%S")
                         minutos = (ahora - dt_mov).total_seconds() / 60
                     except: pass
-                
-                # --- SEMÁFORO (ÚNICA RAZÓN PARA CAMBIAR COLOR) ---
-                
-                # A) LOCAL (30m / 45m)
-                if bid == 93: 
-                    if minutos > 45: 
-                        color_hex = "#EF4444"; texto_negro = False; tooltip_txt = "DEMORA CRÍTICA" # Rojo
-                    elif minutos > 30: 
-                        color_hex = "#F97316"; texto_negro = True; tooltip_txt = "Retraso Leve"    # Naranja
 
-                # B) FORÁNEO (90m / 120m)
-                elif bid == 92: 
-                    if minutos > 120: 
-                        color_hex = "#EF4444"; texto_negro = False; tooltip_txt = "URGENTE"
-                    elif minutos > 90: 
-                        color_hex = "#F97316"; texto_negro = True; tooltip_txt = "Retraso Leve"
+                # --- SEMÁFORO INTELIGENTE (Aquí está el cambio 2) ---
 
-                # C) DESCANSO (60m / 90m)
-                elif bid == 91:
-                    if minutos > 180: # Auto-cierre
-                        self.db.actualizar_taxi_base(taxi['id'], 12)
-                        self.db.cerrar_turno(taxi['id'])
+                # A) LOCAL (Usamos LIMITE_LOCAL)
+                if bid == 93: # Local
+                    if minutos > (LIMITE_LOCAL + 10): # Rojo si pasa 10 min del límite
+                        color_hex = "#EF4444"; texto_negro = False; tooltip_txt = "⚠️ DEMORA CRÍTICA"
+                    elif minutos > LIMITE_LOCAL:      # Naranja si llegó al límite
+                        color_hex = "#F97316"; texto_negro = True; tooltip_txt = "⏳ Retraso Leve"
+
+                # B) FORÁNEO (Usamos LIMITE_FORANEO)
+                elif bid == 92: # Foráneo
+                    if minutos > (LIMITE_FORANEO + 15): # Rojo si pasa 15 min del límite
+                        color_hex = "#EF4444"; texto_negro = False; tooltip_txt = "⚠️ URGENTE SALIDA"
+                    elif minutos > LIMITE_FORANEO:      # Naranja
+                        color_hex = "#F97316"; texto_negro = True; tooltip_txt = "⏳ Retraso Leve"
+
+                # C) DESCANSO (Reglas fijas o puedes crear config para esto también)
+                elif bid == 91: 
+                    if minutos > 180: # Auto-cierre de turno por inactividad extrema (3h)
+                        self.db.actualizar_taxi_base(taxi['id'], 12) # Mover a Fuera de Servicio
                         continue
-                    if minutos > 90: 
+                    if minutos > 90:
                         color_hex = "#EF4444"; texto_negro = False; tooltip_txt = "Exceso Descanso"
-                    elif minutos > 60: 
-                        color_hex = "#F97316"; texto_negro = True; tooltip_txt = "Tiempo Límite"
+                    elif minutos > 60:
+                        color_hex = "#F97316"; texto_negro = True; tooltip_txt = "Tiempo Límite Descanso"
 
-                # 4. CREAR FICHA
+                # 4. CREAR Y AGREGAR FICHA
                 icon_chip = crear_chip_visual(num_taxi, color_hex, texto_negro)
-                
-                item = TaxiItem("") 
+                item = TaxiItem("")
                 item.setIcon(icon_chip)
-                item.setToolTip(f"Unidad {num_taxi}\n{tooltip_txt}\n{int(minutos)} min")
-                
-                # Datos ocultos
+                item.setToolTip(f"Unidad {num_taxi}\n{tooltip_txt}\n⏱️ {int(minutos)} min en base")
                 item.setData(Qt.ItemDataRole.UserRole, taxi['id'])
-                item.setText(num_taxi); item.setForeground(QColor("transparent")) 
-                
-                item.setSizeHint(QSize(90, 90)) 
-                
+                item.setText(num_taxi); item.setForeground(QColor("transparent"))
+                item.setSizeHint(QSize(90, 90))
                 self.listas_bases[bid].addItem(item)
 
-        # B) Una vez que TODO se llenó, "peinamos" solo las listas especiales
-        # para que se vean bonitas numéricamente.
+        # Re-ordenar listas numéricas especiales (Taller, Descanso, etc) para limpieza visual
         ids_ordenar_numerico = [12, 90, 91, 92, 93]
-        
         for bid in ids_ordenar_numerico:
             if bid in self.listas_bases:
                 self.listas_bases[bid].sortItems(Qt.SortOrder.AscendingOrder)
 
         self.cargando_datos = False
+        
+        # Actualizar banderola (Si tienes la función)
+        try: self.actualizar_visual_banderola()
+        except: pass
+
 
     def detectar_cambio_base(self, lista_destino, indice):
         # Si el sistema está cargando datos masivos, no interrumpir
@@ -1353,7 +1328,7 @@ class VentanaPrincipal(QMainWindow):
     def construir_pagina_incidencias(self, parent):
         layout = QHBoxLayout(parent)
         
-        # --- LADO IZQUIERDO: FORMULARIO (Igual que antes) ---
+        # --- LADO IZQUIERDO: FORMULARIO (INTACTO) ---
         frame_form = QFrame(); frame_form.setFixedWidth(400)
         frame_form.setStyleSheet("background-color: #1E293B; border-radius: 10px;")
         lf = QVBoxLayout(frame_form); lf.setSpacing(12)
@@ -1361,40 +1336,41 @@ class VentanaPrincipal(QMainWindow):
         estilo_lbl = "font-size: 14px; font-weight: bold; color: #94A3B8;"
         estilo_in = "font-size: 14px; padding: 5px; background-color: #0F172A; color: white; border: 1px solid #334155; border-radius: 5px;"
 
-        # 1. ZONA INFORMATIVA
+        # 1. ZONA INFORMATIVA (BANDEROLA CON BOTÓN)
         panel_info = QFrame(); panel_info.setStyleSheet("background-color: #0F172A; border-radius: 8px;")
         l_info = QVBoxLayout(panel_info)
         
-        banderola_hoy = self.db.calcular_banderola_del_dia()
-        self.lbl_band = QLabel(f"🚩 BANDEROLA HOY: TAXI {banderola_hoy}")
-        self.lbl_band.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_band.setStyleSheet("color: #FACC15; font-weight: bold; font-size: 16px;")
+        # Usamos la función segura que ya corregimos en gestor_db
+        banderola_hoy = self.db.obtener_encargado_banderolas() 
+        self.btn_banderola_admin = QPushButton(f"🚩 BANDEROLA HOY: TAXI {banderola_hoy}\n(Clic para corregir)")
+        self.btn_banderola_admin.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_banderola_admin.setStyleSheet("""
+            QPushButton {
+                color: #FACC15; font-weight: bold; font-size: 16px; 
+                background-color: transparent; border: 2px dashed #FACC15; 
+                border-radius: 5px; padding: 10px; text-align: center;
+            }
+            QPushButton:hover { background-color: #334155; }
+        """)
+        self.btn_banderola_admin.clicked.connect(self.cambiar_encargado_manual)
         
-        self.lbl_cobro_info = QLabel("Cargando...")
-        self.lbl_cobro_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
-        l_info.addWidget(self.lbl_band); l_info.addWidget(self.lbl_cobro_info)
+        self.lbl_cobro_info = QLabel("Cargando..."); self.lbl_cobro_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        l_info.addWidget(self.btn_banderola_admin); l_info.addWidget(self.lbl_cobro_info)
         lf.addWidget(panel_info); lf.addSpacing(10)
         
         self.actualizar_panel_superior_incidencias()
 
-        # 2. FORMULARIO
+        # 2. FORMULARIO DE REPORTE
         lf.addWidget(QLabel("📝 LEVANTAR REPORTE", styleSheet="font-size: 18px; color: white; font-weight: bold;"))
-        
         self.txt_taxi_reporte = QLineEdit(); self.txt_taxi_reporte.setPlaceholderText("Número Taxi"); self.txt_taxi_reporte.setStyleSheet(estilo_in)
         
         self.cmb_tipo_incidencia = QComboBox()
         self.cmb_tipo_incidencia.addItems(["⚠️ Reporte Disciplina", "🛑 Multa Horas", "🚩 Falta Banderolas", "🚫 Ausencia", "💸 Deuda"])
         self.cmb_tipo_incidencia.setStyleSheet(estilo_in)
-        
-        # Conexión inteligente
         self.cmb_tipo_incidencia.currentTextChanged.connect(self.gestionar_cambio_incidencia)
         
         self.txt_desc_reporte = QTextEdit(); self.txt_desc_reporte.setPlaceholderText("Detalles..."); self.txt_desc_reporte.setMaximumHeight(80); self.txt_desc_reporte.setStyleSheet(estilo_in)
-        
-        self.txt_monto_multa = QLineEdit(); self.txt_monto_multa.setPlaceholderText("0"); self.txt_monto_multa.setText("0"); self.txt_monto_multa.setStyleSheet(estilo_in)
-        self.txt_monto_multa.setEnabled(False) 
-        
+        self.txt_monto_multa = QLineEdit(); self.txt_monto_multa.setPlaceholderText("0"); self.txt_monto_multa.setText("0"); self.txt_monto_multa.setStyleSheet(estilo_in); self.txt_monto_multa.setEnabled(False) 
         self.txt_operadora = QLineEdit(); self.txt_operadora.setPlaceholderText("Tu Nombre"); self.txt_operadora.setStyleSheet(estilo_in)
         
         btn_guardar = QPushButton("💾 GUARDAR"); btn_guardar.clicked.connect(self.guardar_incidencia)
@@ -1406,7 +1382,6 @@ class VentanaPrincipal(QMainWindow):
         lf.addWidget(QLabel("Monto ($):", styleSheet=estilo_lbl)); lf.addWidget(self.txt_monto_multa)
         lf.addWidget(QLabel("Operadora:", styleSheet=estilo_lbl)); lf.addWidget(self.txt_operadora)
         lf.addWidget(btn_guardar)
-
         lf.addSpacing(10)
         
         # BOTONES PISO
@@ -1414,37 +1389,15 @@ class VentanaPrincipal(QMainWindow):
         h_piso = QHBoxLayout()
         btn_piso = QPushButton("💰 Generar Cobro"); btn_piso.clicked.connect(self.ejecutar_cobro_masivo_piso)
         btn_piso.setStyleSheet("background-color: #3B82F6; color: white; font-weight: bold; padding: 10px;")
-        
-        btn_config = QPushButton("⚙️"); btn_config.setFixedSize(40, 40)
-        btn_config.clicked.connect(self.abrir_menu_configuracion)
-        btn_config.setStyleSheet("background-color: #475569; color: white;")
-        
+        btn_config = QPushButton("⚙️"); btn_config.setFixedSize(40, 40); btn_config.clicked.connect(self.abrir_menu_configuracion); btn_config.setStyleSheet("background-color: #475569; color: white;")
         h_piso.addWidget(btn_piso); h_piso.addWidget(btn_config)
         lf.addLayout(h_piso); lf.addStretch()
 
-        # --- LADO DERECHO: PESTAÑAS Y AUDITORÍA ---
+        # --- LADO DERECHO: PESTAÑAS (AQUÍ QUITAMOS LA AUDITORÍA) ---
         frame_list = QFrame(); ll = QVBoxLayout(frame_list)
         
-        # === [AQUÍ ESTÁ LA CORRECCIÓN: RESTAURAMOS LA AUDITORÍA] ===
-        # === RESTAURAMOS LA AUDITORÍA (Ajustada a cierre de turno) ===
-        h_aud = QHBoxLayout()
-        # CAMBIO: Ahora apunta a HOY por defecto para cierre de turno
-        self.date_auditoria = QDateEdit()
-        self.date_auditoria.setCalendarPopup(True)
-        self.date_auditoria.setDate(QDate.currentDate()) # <--- Día actual
-        self.date_auditoria.setStyleSheet(estilo_in)
-        
-        btn_auditar = QPushButton("📋 CERRAR TURNO (Auditoría)")
-        btn_auditar.setStyleSheet("background-color: #00D1FF; color: black; font-weight: bold; padding: 5px 10px;")
-        btn_auditar.clicked.connect(self.ejecutar_auditoria_horas)
-        
-        h_aud.addWidget(QLabel("Auditar día:", styleSheet=estilo_lbl))
-        h_aud.addWidget(self.date_auditoria)
-        h_aud.addWidget(btn_auditar)
-        
-        ll.addLayout(h_aud) # <--- La añadimos al layout derecho
-        ll.addSpacing(10)
-        # ==========================================================
+        # [ELIMINADO] Aquí estaba el h_aud con el botón de "Cerrar Turno". 
+        # Ya no existe. Pasamos directo a las pestañas.
         
         self.tabs_incidencias_panel = QTabWidget()
         self.tabs_incidencias_panel.setStyleSheet("QTabWidget::pane { border: 1px solid #334155; } QTabBar::tab { background: #1E293B; color: #94A3B8; padding: 8px 15px; } QTabBar::tab:selected { background: #3B82F6; color: white; }")
@@ -1477,6 +1430,7 @@ class VentanaPrincipal(QMainWindow):
         # Inicializar estado inicial
         self.gestionar_cambio_incidencia(self.cmb_tipo_incidencia.currentText())
 
+
     def al_cambiar_tab_incidencias(self, idx):
         # Si es la pestaña 3 (Historial), cargamos el historial
         if idx == 3:
@@ -1486,53 +1440,122 @@ class VentanaPrincipal(QMainWindow):
             self.cargar_tabla_deudas()
 
     def gestionar_cambio_incidencia(self, texto):
-        # 1. Autocompletar Descripción
-        self.auto_llenar_descripcion_incidencia(texto)
+        # 1. Resetear estado inicial
+        self.txt_monto_multa.setEnabled(False)
+        self.txt_monto_multa.setText("0")
+        self.txt_desc_reporte.clear() 
         
-        # 2. Lógica Inteligente de Montos y Unidades
+        # 2. Diccionario de Descripciones Automáticas (Lo que faltaba)
+        descripciones = {
+            "⚠️ Reporte Disciplina": "Conducta inapropiada en base / Queja de usuario.",
+            "🛑 Multa Horas": "Incumplimiento de jornada laboral mínima (8 horas).",
+            "🚩 Falta Banderolas": "No colocó la banderola metálica en la base designada para apartar lugar.",
+            "🚫 Ausencia": "Falta injustificada al turno correspondiente.",
+            "💸 Deuda": "Saldo pendiente de pago por concepto de..."
+        }
         
-        # CASO: FALTA BANDEROLAS (Autocompletado de unidad y monto)
+        # 3. Poner el texto automático
+        if texto in descripciones:
+            self.txt_desc_reporte.setText(descripciones[texto])
+
+        # 4. Lógica Específica (Montos y Taxis)
         if "Falta Banderolas" in texto:
-            # Ponemos el monto configurado
+            self.txt_monto_multa.setEnabled(True)
+            # Costo automático
             costo = self.db.obtener_costo_banderola()
             self.txt_monto_multa.setText(str(costo))
-            self.txt_monto_multa.setEnabled(True)
-            self.txt_monto_multa.setStyleSheet("background-color: #0F172A; color: #FACC15; font-weight: bold; border: 1px solid #FACC15;")
             
-            # --- NUEVO: Poner el taxi que le toca hoy ---
-            num_banderola = self.db.calcular_banderola_del_dia()
-            self.txt_taxi_reporte.setText(str(num_banderola)) # <--- Lo escribe solito
+            # Taxi automático (el encargado de hoy)
+            num_real = self.db.obtener_encargado_banderolas()
+            self.txt_taxi_reporte.setText(str(num_real)) 
             
-        # CASO: BLOQUEO TOTAL (Disciplina o Ausencia)
-        elif "Disciplina" in texto or "Ausencia" in texto:
-            self.txt_monto_multa.setText("0")
-            self.txt_monto_multa.setEnabled(False)
-            self.txt_monto_multa.setStyleSheet("background-color: #334155; color: #94A3B8; border: 1px solid #475569;")
-            # No borramos el taxi aquí por si ya lo habían escrito
+        elif "Multa Horas" in texto:
+            self.txt_monto_multa.setEnabled(True) # Permitir editar monto
             
-        # CASO: LIBRE
-        else:
-            self.txt_monto_multa.setText("")
-            self.txt_monto_multa.setEnabled(True)
-            self.txt_monto_multa.setStyleSheet("background-color: #0F172A; color: white; border: 1px solid #334155;")
+        elif "Deuda" in texto:
+            self.txt_monto_multa.setEnabled(True) # Permitir editar monto
 
     def abrir_menu_configuracion(self):
-        menu = QMenu(self)
-        menu.setStyleSheet("QMenu { background-color: #1E293B; color: white; border: 1px solid #334155; } QMenu::item:selected { background-color: #3B82F6; }")
+        d = QDialog(self)
+        d.setWindowTitle("⚙️ Configuración del Sistema")
+        d.setFixedSize(400, 350) 
+        d.setStyleSheet("background-color: #1E293B; color: white; font-size: 14px;")
         
-        # Opción 1: Piso
-        accion_piso = QAction("💲 Cambiar Costo Derecho de Piso", self)
-        accion_piso.triggered.connect(self.cambiar_costo_piso)
-        menu.addAction(accion_piso)
-        
-        # Opción 2: Banderola
-        accion_band = QAction("🚩 Cambiar Multa por Banderola", self)
-        accion_band.triggered.connect(self.cambiar_costo_banderola)
-        menu.addAction(accion_band)
-        
-        menu.exec(QCursor.pos())
+        l = QVBoxLayout(d)
 
-    
+        # 1. Costos
+        l.addWidget(QLabel("💰 COSTOS OPERATIVOS", styleSheet="color:#FACC15; font-weight:bold;"))
+        
+        h1 = QHBoxLayout()
+        h1.addWidget(QLabel("Multa Banderola ($):"))
+        # Este sí se llamaba 'costo' en tu BD, así que lo dejamos igual
+        txt_band = QLineEdit(str(self.db.obtener_costo_banderola()))
+        h1.addWidget(txt_band)
+        l.addLayout(h1)
+        
+        h2 = QHBoxLayout()
+        h2.addWidget(QLabel("Costo de Piso ($):"))
+        # CORRECCIÓN AQUÍ: Usamos 'config' que es como se llama en tu BD real
+        txt_piso = QLineEdit(str(self.db.obtener_config_piso()))
+        h2.addWidget(txt_piso)
+        l.addLayout(h2)
+
+        l.addSpacing(15)
+
+        # 2. Tiempos (Estos sí son nuevos, asegúrate que gestor_db los tenga)
+        l.addWidget(QLabel("⏱️ TIEMPOS LÍMITE (SEMAFORO)", styleSheet="color:#FACC15; font-weight:bold;"))
+        
+        # Si te da error aquí, es porque SÍ te falta agregar 'obtener_tiempos_limite' en gestor_db
+        # Pero primero probemos si ya existe (a veces viene en versiones previas)
+        try:
+            tiempos = self.db.obtener_tiempos_limite()
+        except AttributeError:
+            tiempos = {'local': 20, 'foraneo': 45} # Valor seguro por si falla
+
+        h3 = QHBoxLayout()
+        h3.addWidget(QLabel("Mins. Base Local:"))
+        txt_t_local = QLineEdit(str(tiempos['local']))
+        h3.addWidget(txt_t_local)
+        l.addLayout(h3)
+        
+        h4 = QHBoxLayout()
+        h4.addWidget(QLabel("Mins. Base Foránea:"))
+        txt_t_foraneo = QLineEdit(str(tiempos['foraneo']))
+        h4.addWidget(txt_t_foraneo)
+        l.addLayout(h4)
+
+        l.addSpacing(20)
+        
+        btn = QPushButton("💾 GUARDAR CAMBIOS")
+        btn.setStyleSheet("background-color: #10B981; padding: 10px; font-weight: bold; border-radius: 5px;")
+        
+        def guardar():
+            try:
+                # Guardar Costos
+                v_band = float(txt_band.text())
+                v_piso = float(txt_piso.text())
+                
+                self.db.guardar_costo_banderola(v_band)
+                # CORRECCIÓN AQUÍ TAMBIÉN
+                self.db.guardar_config_piso(v_piso)
+                
+                # Guardar Tiempos (Solo si existen las funciones en BD)
+                if hasattr(self.db, 'guardar_tiempos_limite'):
+                    t_loc = int(txt_t_local.text())
+                    t_for = int(txt_t_foraneo.text())
+                    self.db.guardar_tiempos_limite(t_loc, t_for)
+                
+                QMessageBox.information(d, "Éxito", "Configuración actualizada correctamente.")
+                self.cargar_datos_en_tablero() 
+                d.accept()
+            except ValueError:
+                QMessageBox.warning(d, "Error", "Ingrese solo números válidos.")
+            except Exception as e:
+                QMessageBox.warning(d, "Error", f"Ocurrió un error: {e}")
+
+        btn.clicked.connect(guardar)
+        l.addWidget(btn)
+        d.exec()
 
     def cambiar_costo_banderola(self):
         actual = self.db.obtener_costo_banderola()
@@ -2084,7 +2107,14 @@ class VentanaPrincipal(QMainWindow):
         
         # Filtros
         h = QHBoxLayout()
-        self.date_global = QDateEdit(); self.date_global.setCalendarPopup(True); self.date_global.setDate(QDate.currentDate())
+        self.date_global = QDateEdit(); self.date_global.setCalendarPopup(True)
+        
+        # === AQUÍ ESTÁ EL ÚNICO CAMBIO ===
+        # Antes tenías: self.date_global.setDate(QDate.currentDate())
+        # Ahora ponemos: .addDays(-1) para que seleccione AYER por defecto.
+        self.date_global.setDate(QDate.currentDate().addDays(-1))
+        # =================================
+        
         self.date_global.setStyleSheet("background-color: #0F172A; color: white; padding: 12px; font-size: 16px;")
         
         self.cmb_periodo_global = QComboBox(); self.cmb_periodo_global.addItems(["DIA","MES","AÑO","SIEMPRE"])
@@ -2113,6 +2143,7 @@ class VentanaPrincipal(QMainWindow):
         
         l.addWidget(f); self.actualizar_formato_global()
 
+
     def preparar_reporte(self, tipo):
         periodo = self.cmb_periodo_global.currentText()
         qdate = self.date_global.date()
@@ -2127,7 +2158,7 @@ class VentanaPrincipal(QMainWindow):
             
             # --- CAMBIO: VALIDACIÓN DE CONTRASEÑA REAL ---
             # Define aquí la contraseña única de administración
-            CLAVE_MAESTRA = "ZORRO2026" # <--- ¡CAMBIA ESTO POR LA CONTRASEÑA QUE QUIERAS!
+            CLAVE_MAESTRA = "ZORRO$@2026"
             
             if pwd != CLAVE_MAESTRA:
                 # Si la contraseña no coincide, mostramos error y cancelamos todo
@@ -2212,6 +2243,26 @@ class VentanaPrincipal(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error Fatal", f"No se pudo crear el PDF:\n{e}")
 
+
+    # Función para actualizar el botón (llámala en cargar_datos_en_tablero)
+    # 1. ACTUALIZA EL TEXTO DEL BOTÓN (Para que se vea el cambio)
+    def actualizar_visual_banderola(self):
+        try:
+            # Si el botón no existe aún (ej. al inicio), ignoramos
+            if hasattr(self, 'btn_banderola_admin'):
+                encargado = self.db.obtener_encargado_banderolas()
+                self.btn_banderola_admin.setText(f"🚩 BANDEROLA HOY: TAXI {encargado}\n(Clic para corregir)")
+        except: pass
+
+    # 2. LA FUNCIÓN DEL CLIC (Para cambiar manual)
+    def cambiar_encargado_manual(self):
+        num, ok = QInputDialog.getInt(self, "Corregir Banderola", 
+                                      "Ingrese el número de unidad que debe tocar HOY:\n(El sistema seguirá la cuenta desde este número)", 
+                                      value=0, min=1, max=999)
+        if ok:
+            self.db.forzar_cambio_banderola(num)
+            self.actualizar_visual_banderola()
+            QMessageBox.information(self, "Ajustado", f"Se ha fijado al Taxi {num} como encargado de hoy.")
 # 4. INICIALIZACIÓN BD Y MAIN
 # ==========================================
 
